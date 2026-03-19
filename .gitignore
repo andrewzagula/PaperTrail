@@ -29,3 +29,11 @@ data/
 
 # Claude exports
 **/2026-*.txt
+
+# Dev-only files (not shipped to open source consumers)
+CLAUDE.md
+PROGRESS.md
+.claude/
+
+# Logs
+*.log

@@ -1,67 +1,66 @@
-# Papertrail
+# PaperTrail
 
-An AI research copilot that helps you go from paper to understanding to comparison to idea to implementation.
+**Self-hosted AI research copilot.** Upload papers, get structured breakdowns, ask section-aware questions, compare across papers, generate ideas, and turn methods into code.
 
-Unlike generic "chat with PDF" tools, Papertrail provides **structured breakdowns**, **cross-paper comparison**, **research idea generation**, and **code implementation** from academic papers.
+Unlike generic "chat with PDF" tools, PaperTrail understands academic paper structure — sections, methodology, contributions, limitations — and uses that structure to give you better answers.
+
+> **No accounts. No cloud. No Docker.** Bring your own OpenAI API key, and everything runs locally.
 
 ## Features
 
-- **Upload papers** — paste an arXiv link or upload a PDF
-- **Structured breakdown** — get a clear analysis: Problem, Method, Key Contributions, Results, Limitations, Future Work *(coming soon)*
+- **Paper ingestion** — paste an arXiv link or upload a PDF. Text is extracted, sections are detected, and embeddings are generated automatically
+- **Structured breakdown** — problem, method, key contributions, results, limitations, future work *(coming soon)*
 - **Section-aware Q&A** — ask grounded questions with citations back to specific sections *(coming soon)*
-- **Multi-paper compare** — select 2-5 papers and get a structured comparison table *(coming soon)*
+- **Multi-paper comparison** — select 2-5 papers and get a structured comparison table *(coming soon)*
 - **Idea generation** — generate novel research ideas using structured transformations *(coming soon)*
 - **Paper to code** — turn methods into pseudocode and Python/PyTorch starter code *(coming soon)*
 
 ## Requirements
 
-- **Python 3.11+**
-- **Node.js 18+**
-- **OpenAI API key** — get one at [platform.openai.com](https://platform.openai.com)
+- Python 3.11+
+- Node.js 18+
+- An [OpenAI API key](https://platform.openai.com)
 
-## Setup
+## Quick Start
 
 ```bash
-# Clone the repo
+# Clone and enter the repo
 git clone https://github.com/yourusername/papertrail.git
 cd papertrail
 
-# Install backend dependencies
+# Backend setup
 pip install -r backend/requirements.txt
 
-# Install frontend dependencies
+# Frontend setup
 cd frontend && npm install && cd ..
 
 # Configure your API key
 cp .env.example .env
-# Edit .env and add your OpenAI API key
+# Edit .env and set OPENAI_API_KEY
 ```
 
-## Running
+Then start both servers (two terminals):
 
-You need two terminal windows:
-
-**Terminal 1 — Backend:**
 ```bash
+# Terminal 1 — backend
 python run.py
-# API running at http://localhost:8000
+# API at http://localhost:8000
 ```
 
-**Terminal 2 — Frontend:**
 ```bash
-cd frontend
-npm run dev
-# App running at http://localhost:3000
+# Terminal 2 — frontend
+cd frontend && npm run dev
+# App at http://localhost:3000
 ```
 
-Open **http://localhost:3000** in your browser.
+Open **http://localhost:3000** and start uploading papers.
 
 ## How It Works
 
-1. Paste an arXiv URL or upload a PDF
-2. Papertrail extracts the text, detects sections, and generates embeddings
-3. You get a structured view of the paper with navigable sections
-4. *(Coming soon)* Ask questions, compare papers, generate ideas, and get starter code
+1. Paste an arXiv URL or drag-and-drop a PDF
+2. PaperTrail extracts text, detects sections, and generates vector embeddings
+3. You get a structured, navigable view of the paper
+4. Ask questions, compare papers, generate ideas, get starter code *(coming soon)*
 
 ## Tech Stack
 
@@ -70,37 +69,55 @@ Open **http://localhost:3000** in your browser.
 | Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS v4 |
 | Backend | Python, FastAPI |
 | Database | SQLite (zero config) |
-| Vector Store | ChromaDB (embedded) |
-| AI | OpenAI API |
+| Vector Store | ChromaDB (embedded, persistent) |
+| AI | OpenAI API (embeddings + generation) |
 
-No Docker required. No external database to set up. Everything runs locally.
+No Docker. No external database. Everything runs on your machine.
 
 ## Data Storage
 
-All your data lives in the `data/` directory (auto-created on first run):
-- `data/papertrail.db` — SQLite database (papers, sections, chats)
-- `data/pdfs/` — downloaded/uploaded PDF files
-- `data/chroma/` — vector embeddings for search
+All data lives in `data/` (auto-created on first run):
+
+| Path | Contents |
+|---|---|
+| `data/papertrail.db` | SQLite database (papers, sections, chats) |
+| `data/pdfs/` | Downloaded and uploaded PDF files |
+| `data/chroma/` | Vector embeddings for semantic search |
 
 To reset everything, delete the `data/` directory.
 
-## Project Status
+## Troubleshooting
 
-This is an active MVP build. See [PROGRESS.md](PROGRESS.md) for detailed phase tracking.
+**Backend won't start** — make sure you've installed dependencies (`pip install -r backend/requirements.txt`) and set `OPENAI_API_KEY` in `.env`.
 
-| Phase | Status |
+**Frontend can't reach backend** — the backend must be running on port 8000. Check CORS if you changed the frontend port (set `BACKEND_CORS_ORIGINS` in `.env`).
+
+**Embeddings fail but paper still saves** — this is by design. If your API key is invalid or rate-limited, the paper saves without embeddings. Check the `num_chunks_embedded` field in the API response.
+
+## Roadmap
+
+| Feature | Status |
 |---|---|
-| Paper Ingestion | Done |
-| Structured Breakdown | Next |
+| Paper Ingestion (arXiv + PDF) | Done |
+| Structured Breakdown | In Progress |
 | Section-Aware Chat | Planned |
-| Multi-Paper Compare | Planned |
+| Multi-Paper Comparison | Planned |
 | Idea Generation | Planned |
 | Paper to Code | Planned |
 
 ## Contributing
 
-Contributions welcome. Read [CLAUDE.md](CLAUDE.md) for architecture details, coding patterns, and conventions.
+Contributions welcome! The codebase follows standard patterns:
+
+- **Backend:** FastAPI with routers in `backend/app/routers/`, services in `backend/app/services/`, models in `backend/app/models/`
+- **Frontend:** Next.js App Router with client components, Tailwind CSS for styling, no component libraries
+
+```bash
+# Verify everything works
+curl http://localhost:8000/health        # backend health check
+cd frontend && npx next build            # frontend build check
+```
 
 ## License
 
-MIT
+[MIT](LICENSE)
