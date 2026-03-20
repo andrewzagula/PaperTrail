@@ -1,43 +1,73 @@
 # PaperTrail
 
-**Self-hosted AI research assistant for arXiv.** Start with a research question: PaperTrail searches arXiv, ranks papers by relevance, and helps you understand what it finds through structured breakdowns, section-aware Q&A, cross-paper comparison, idea generation, and code extraction.
+PaperTrail is a self-hosted AI research assistant for arXiv. You start with a research question, PaperTrail turns that into targeted arXiv searches, ranks the results, helps you ingest the best papers, and then guides the rest of the workflow: understanding, grounded Q&A, comparison, idea generation, and implementation planning.
 
-Unlike generic "chat with PDF" tools, PaperTrail understands academic paper structure, including sections, methodology, contributions, and limitations, and uses that structure to give you better answers. Unlike autonomous research agents, PaperTrail keeps you in control: bounded search budgets, explicit uncertainty, and human-in-the-loop decisions at every step.
+This project is designed as a bounded research tool, not an autonomous web agent. It helps you search and reason over papers while keeping you in control of what gets ingested, compared, saved, and acted on.
 
-> **No accounts. No cloud. No Docker.** Bring your own OpenAI API key, and everything runs locally.
+> No accounts. No cloud. No Docker. Bring your own OpenAI API key and run everything locally.
 
-## How It Works
+## Product Vision
 
-1. **Ask a question**: describe what you're researching in natural language
-2. **PaperTrail searches arXiv**: the system generates targeted search queries, fetches results, deduplicates, and ranks them by relevance with explanations *(coming soon)*
-3. **Ingest the best matches**: select papers to ingest for deep analysis, or upload your own PDFs directly
-4. **Go deep**: structured breakdowns, grounded Q&A, multi-paper comparison, idea generation, and code extraction *(coming soon)*
+The intended finished PaperTrail experience looks like this:
 
-You can also skip discovery and upload papers directly; arXiv links and PDF uploads are always available.
+1. Ask a research question in plain language.
+2. PaperTrail generates a small set of targeted arXiv queries.
+3. It searches arXiv, deduplicates results, and ranks papers with relevance scores and explanations.
+4. You ingest the papers that matter, or skip discovery and add an arXiv link or PDF directly.
+5. Each paper gets a structured breakdown: problem, method, contributions, results, limitations, and future work.
+6. You ask grounded questions about a paper and get section-aware answers with citations back to the source text.
+7. You compare multiple papers side by side across methods, datasets, strengths, weaknesses, and takeaways.
+8. You generate follow-on research ideas by combining, extending, ablating, or applying what the papers describe.
+9. You turn a paper into an implementation plan with algorithm steps, pseudocode, missing assumptions, and starter code.
+10. Everything you care about stays in a local workspace: papers, discovery runs, saved comparisons, and saved ideas.
 
-## Features
+## Core Capabilities
 
-| Feature | Status |
+- **Question-first discovery**: start from a research goal, not a paper URL.
+- **arXiv-native search**: generate focused keyword queries, search arXiv, and rank the shortlist.
+- **Direct paper ingestion**: add papers from an arXiv link or upload a PDF.
+- **Structured understanding**: convert long papers into a consistent analysis you can scan quickly.
+- **Grounded chat**: ask questions about a paper and get answers tied to specific sections.
+- **Multi-paper comparison**: compare 2 to 5 papers in a structured matrix plus narrative summary.
+- **Idea generation**: create concrete research directions from one paper or a small set of papers.
+- **Paper-to-code support**: extract algorithms, identify missing details, and generate starter implementations.
+- **Local workspace**: keep your research state on your machine with no hosted dependency.
+
+## How It Is Intended to Feel
+
+PaperTrail is meant to feel like a focused research workspace rather than a generic chatbot:
+
+- The home screen centers on a research question and recent discovery runs.
+- Discovery results show ranked paper cards, generated queries, relevance explanations, and one-click ingestion.
+- Each paper page combines abstract, structured breakdown, full section view, grounded chat, and implementation tools.
+- Comparison and idea-generation views are separate workflows, not buried in a single chat thread.
+- A dashboard gives you one place to return to saved papers, comparisons, ideas, and prior discovery work.
+
+## Boundaries
+
+PaperTrail is intentionally constrained:
+
+- It searches **arXiv only**.
+- It does **not** browse the open web.
+- It does **not** follow citation chains autonomously.
+- It does **not** run open-ended multi-step research loops without approval.
+- Search budgets are explicit and capped.
+- The product is designed for **single-user, self-hosted** use.
+
+The goal is trustworthy assistance, not autonomy theater.
+
+## Tech Stack
+
+| Layer | Technology |
 |---|---|
-| Paper ingestion (arXiv link + PDF upload) | Done |
-| Research discovery (question → arXiv search → ranked results) | Planned |
-| Structured breakdown (problem, method, contributions, results) | Planned |
-| Section-aware Q&A with citations | Planned |
-| Multi-paper comparison | Planned |
-| Idea generation | Planned |
-| Paper to code | Planned |
+| Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS v4 |
+| Backend | Python, FastAPI |
+| Database | SQLite |
+| Vector Store | ChromaDB |
+| AI | OpenAI API |
+| Discovery Source | arXiv API |
 
-## What "Agent" Means Here
-
-PaperTrail uses the word "agent" in a specific, bounded sense:
-
-- The system generates search strategies from your question (LLM-assisted)
-- It executes those searches against the arXiv API (not the open web)
-- It ranks and filters results with explanations (LLM-assisted)
-- It does **not** browse the web, follow citation chains autonomously, or take multi-step actions without your approval
-- Search budgets are explicit and capped (max queries, max results per query)
-
-This is a tool that helps you search smarter, not an autonomous agent that researches on your behalf.
+Everything runs locally. There is no external database, hosted backend, or required container setup.
 
 ## Requirements
 
@@ -48,84 +78,82 @@ This is a tool that helps you search smarter, not an autonomous agent that resea
 ## Quick Start
 
 ```bash
-# Clone and enter the repo
-git clone https://github.com/yourusername/papertrail.git
-cd papertrail
+# Clone the repo
+git clone https://github.com/andrewzagula/PaperTrail.git
+cd PaperTrail
 
-# Backend setup
+# Backend
 pip install -r backend/requirements.txt
 
-# Frontend setup
-cd frontend && npm install && cd ..
+# Frontend
+cd frontend
+npm install
+cd ..
 
-# Configure your API key
+# Configure environment
 cp .env.example .env
-# Edit .env and set OPENAI_API_KEY
+# Set OPENAI_API_KEY in .env
 ```
 
-Then start both servers (two terminals):
+Start the backend:
 
 ```bash
-# Terminal 1 - backend
 python run.py
-# API at http://localhost:8000
 ```
+
+Start the frontend in a second terminal:
 
 ```bash
-# Terminal 2 - frontend
-cd frontend && npm run dev
-# App at http://localhost:3000
+cd frontend
+npm run dev
 ```
 
-Open **http://localhost:3000** and start researching.
+Then open `http://localhost:3000`.
 
-## Tech Stack
+## Project Layout
 
-| Layer | Technology |
+```text
+PaperTrail/
+├── backend/          # FastAPI app, services, models, routers
+├── frontend/         # Next.js app
+├── data/             # Local runtime state (auto-created, gitignored)
+├── run.py            # Backend entry point
+└── .env.example      # Environment template
+```
+
+## Local Data Storage
+
+PaperTrail stores its runtime state in `data/`:
+
+| Path | Purpose |
 |---|---|
-| Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS v4 |
-| Backend | Python, FastAPI |
-| Database | SQLite (zero config) |
-| Vector Store | ChromaDB (embedded, persistent) |
-| AI | OpenAI API (embeddings + generation) |
-| Discovery | arXiv API (search + metadata) |
+| `data/papertrail.db` | SQLite database for papers, sections, chats, discovery runs, and saved items |
+| `data/pdfs/` | Downloaded and uploaded PDFs |
+| `data/chroma/` | ChromaDB vector embeddings for retrieval |
 
-No Docker. No external database. Everything runs on your machine.
+Delete `data/` if you want a full local reset.
 
-## Data Storage
+## Operating Model
 
-All data lives in `data/` (auto-created on first run):
-
-| Path | Contents |
-|---|---|
-| `data/papertrail.db` | SQLite database (papers, sections, discovery runs, chats) |
-| `data/pdfs/` | Downloaded and uploaded PDF files |
-| `data/chroma/` | Vector embeddings for semantic search |
-
-To reset everything, delete the `data/` directory.
+- Papers and sections are stored in SQLite for relational access.
+- Section embeddings are stored in ChromaDB for retrieval.
+- Discovery uses the arXiv API plus LLM-generated queries and ranking.
+- Grounded chat retrieves only from the selected paper's sections.
+- All saved research artifacts remain local to your machine.
 
 ## Troubleshooting
 
-**Backend won't start**: make sure you've installed dependencies (`pip install -r backend/requirements.txt`) and set `OPENAI_API_KEY` in `.env`.
+**Backend will not start**  
+Install backend dependencies and make sure `OPENAI_API_KEY` is set in `.env`.
 
-**Frontend can't reach backend**: the backend must be running on port 8000. Check CORS if you changed the frontend port (set `BACKEND_CORS_ORIGINS` in `.env`).
+**Frontend cannot reach the backend**  
+The backend should be running on `http://localhost:8000`. If you changed ports, update the frontend API configuration and CORS settings.
 
-**Embeddings fail but paper still saves**: this is by design. If your API key is invalid or rate-limited, the paper saves without embeddings. Check the `num_chunks_embedded` field in the API response.
+**Embeddings fail but papers still save**  
+This is expected behavior. PaperTrail is designed to preserve the paper even if embedding generation fails.
 
-**arXiv search returns no results**: the arXiv API uses keyword matching, not semantic search. Try rephrasing your question with more specific technical terms.
-
-## Contributing
-
-Contributions welcome! The codebase follows standard patterns:
-
-- **Backend:** FastAPI with routers in `backend/app/routers/`, services in `backend/app/services/`, models in `backend/app/models/`
-- **Frontend:** Next.js App Router with client components, Tailwind CSS for styling, no component libraries
-
-```bash
-# Verify everything works
-curl http://localhost:8000/health        # backend health check
-cd frontend && npx next build            # frontend build check
-```
+**Discovery quality is poor**  
+arXiv search is keyword-based. More specific technical phrasing usually produces better results.
 
 ## License
 
