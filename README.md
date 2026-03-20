@@ -1,19 +1,43 @@
 # PaperTrail
 
-**Self-hosted AI research copilot.** Upload papers, get structured breakdowns, ask section-aware questions, compare across papers, generate ideas, and turn methods into code.
+**Self-hosted AI research assistant for arXiv.** Start with a research question: PaperTrail searches arXiv, ranks papers by relevance, and helps you understand what it finds through structured breakdowns, section-aware Q&A, cross-paper comparison, idea generation, and code extraction.
 
-Unlike generic "chat with PDF" tools, PaperTrail understands academic paper structure — sections, methodology, contributions, limitations — and uses that structure to give you better answers.
+Unlike generic "chat with PDF" tools, PaperTrail understands academic paper structure, including sections, methodology, contributions, and limitations, and uses that structure to give you better answers. Unlike autonomous research agents, PaperTrail keeps you in control: bounded search budgets, explicit uncertainty, and human-in-the-loop decisions at every step.
 
 > **No accounts. No cloud. No Docker.** Bring your own OpenAI API key, and everything runs locally.
 
+## How It Works
+
+1. **Ask a question**: describe what you're researching in natural language
+2. **PaperTrail searches arXiv**: the system generates targeted search queries, fetches results, deduplicates, and ranks them by relevance with explanations *(coming soon)*
+3. **Ingest the best matches**: select papers to ingest for deep analysis, or upload your own PDFs directly
+4. **Go deep**: structured breakdowns, grounded Q&A, multi-paper comparison, idea generation, and code extraction *(coming soon)*
+
+You can also skip discovery and upload papers directly; arXiv links and PDF uploads are always available.
+
 ## Features
 
-- **Paper ingestion** — paste an arXiv link or upload a PDF. Text is extracted, sections are detected, and embeddings are generated automatically
-- **Structured breakdown** — problem, method, key contributions, results, limitations, future work *(coming soon)*
-- **Section-aware Q&A** — ask grounded questions with citations back to specific sections *(coming soon)*
-- **Multi-paper comparison** — select 2-5 papers and get a structured comparison table *(coming soon)*
-- **Idea generation** — generate novel research ideas using structured transformations *(coming soon)*
-- **Paper to code** — turn methods into pseudocode and Python/PyTorch starter code *(coming soon)*
+| Feature | Status |
+|---|---|
+| Paper ingestion (arXiv link + PDF upload) | Done |
+| Research discovery (question → arXiv search → ranked results) | Planned |
+| Structured breakdown (problem, method, contributions, results) | Planned |
+| Section-aware Q&A with citations | Planned |
+| Multi-paper comparison | Planned |
+| Idea generation | Planned |
+| Paper to code | Planned |
+
+## What "Agent" Means Here
+
+PaperTrail uses the word "agent" in a specific, bounded sense:
+
+- The system generates search strategies from your question (LLM-assisted)
+- It executes those searches against the arXiv API (not the open web)
+- It ranks and filters results with explanations (LLM-assisted)
+- It does **not** browse the web, follow citation chains autonomously, or take multi-step actions without your approval
+- Search budgets are explicit and capped (max queries, max results per query)
+
+This is a tool that helps you search smarter, not an autonomous agent that researches on your behalf.
 
 ## Requirements
 
@@ -42,25 +66,18 @@ cp .env.example .env
 Then start both servers (two terminals):
 
 ```bash
-# Terminal 1 — backend
+# Terminal 1 - backend
 python run.py
 # API at http://localhost:8000
 ```
 
 ```bash
-# Terminal 2 — frontend
+# Terminal 2 - frontend
 cd frontend && npm run dev
 # App at http://localhost:3000
 ```
 
-Open **http://localhost:3000** and start uploading papers.
-
-## How It Works
-
-1. Paste an arXiv URL or drag-and-drop a PDF
-2. PaperTrail extracts text, detects sections, and generates vector embeddings
-3. You get a structured, navigable view of the paper
-4. Ask questions, compare papers, generate ideas, get starter code *(coming soon)*
+Open **http://localhost:3000** and start researching.
 
 ## Tech Stack
 
@@ -71,6 +88,7 @@ Open **http://localhost:3000** and start uploading papers.
 | Database | SQLite (zero config) |
 | Vector Store | ChromaDB (embedded, persistent) |
 | AI | OpenAI API (embeddings + generation) |
+| Discovery | arXiv API (search + metadata) |
 
 No Docker. No external database. Everything runs on your machine.
 
@@ -80,7 +98,7 @@ All data lives in `data/` (auto-created on first run):
 
 | Path | Contents |
 |---|---|
-| `data/papertrail.db` | SQLite database (papers, sections, chats) |
+| `data/papertrail.db` | SQLite database (papers, sections, discovery runs, chats) |
 | `data/pdfs/` | Downloaded and uploaded PDF files |
 | `data/chroma/` | Vector embeddings for semantic search |
 
@@ -88,22 +106,13 @@ To reset everything, delete the `data/` directory.
 
 ## Troubleshooting
 
-**Backend won't start** — make sure you've installed dependencies (`pip install -r backend/requirements.txt`) and set `OPENAI_API_KEY` in `.env`.
+**Backend won't start**: make sure you've installed dependencies (`pip install -r backend/requirements.txt`) and set `OPENAI_API_KEY` in `.env`.
 
-**Frontend can't reach backend** — the backend must be running on port 8000. Check CORS if you changed the frontend port (set `BACKEND_CORS_ORIGINS` in `.env`).
+**Frontend can't reach backend**: the backend must be running on port 8000. Check CORS if you changed the frontend port (set `BACKEND_CORS_ORIGINS` in `.env`).
 
-**Embeddings fail but paper still saves** — this is by design. If your API key is invalid or rate-limited, the paper saves without embeddings. Check the `num_chunks_embedded` field in the API response.
+**Embeddings fail but paper still saves**: this is by design. If your API key is invalid or rate-limited, the paper saves without embeddings. Check the `num_chunks_embedded` field in the API response.
 
-## Roadmap
-
-| Feature | Status |
-|---|---|
-| Paper Ingestion (arXiv + PDF) | Done |
-| Structured Breakdown | In Progress |
-| Section-Aware Chat | Planned |
-| Multi-Paper Comparison | Planned |
-| Idea Generation | Planned |
-| Paper to Code | Planned |
+**arXiv search returns no results**: the arXiv API uses keyword matching, not semantic search. Try rephrasing your question with more specific technical terms.
 
 ## Contributing
 
