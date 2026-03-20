@@ -14,18 +14,59 @@ interface PaperItem {
   created_at: string;
 }
 
+interface DiscoveryRunItem {
+  id: string;
+  question: string;
+  status: string;
+  created_at: string;
+  num_results: number;
+}
+
 export default function Home() {
   const router = useRouter();
   const [papers, setPapers] = useState<PaperItem[]>([]);
+  const [runs, setRuns] = useState<DiscoveryRunItem[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch(`${API_URL}/papers/`)
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data) => setPapers(data))
-      .catch(() => {})
-      .finally(() => setLoaded(true));
+    Promise.all([
+      fetch(`${API_URL}/papers/`)
+        .then((res) => (res.ok ? res.json() : []))
+        .catch(() => []),
+      fetch(`${API_URL}/discover/`)
+        .then((res) => (res.ok ? res.json() : []))
+        .catch(() => []),
+    ]).then(([papersData, runsData]) => {
+      setPapers(papersData);
+      setRuns(runsData);
+      setLoaded(true);
+    });
   }, []);
+
+  const handleDiscover = async () => {
+    if (!question.trim()) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      const res = await fetch(`${API_URL}/discover/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: question.trim(), max_results: 10 }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.detail || "Discovery request failed");
+      }
+      const data = await res.json();
+      router.push(`/discover/${data.id}`);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col items-center px-6 py-16">
@@ -34,12 +75,50 @@ export default function Home() {
           Paper<span className="text-[var(--primary)]">trail</span>
         </h1>
         <p className="text-xl text-[var(--muted)] leading-relaxed">
-          Go from paper to understanding to comparison to idea to
-          implementation.
+          Start with a research question. Discover, understand, compare, and
+          implement.
         </p>
+
+        {/* Discovery input */}
+        <div className="pt-2">
+          <div className="flex gap-3">
+            <input
+              type="text"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleDiscover()}
+              placeholder="What is your research question?"
+              className="flex-1 px-4 py-3 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--muted)] focus:outline-none focus:border-[var(--primary)] transition-colors"
+              disabled={submitting}
+            />
+            <button
+              onClick={handleDiscover}
+              disabled={submitting || !question.trim()}
+              className="px-6 py-3 bg-[var(--primary)] hover:bg-[var(--primary-hover)] disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
+            >
+              {submitting ? "Searching..." : "Discover"}
+            </button>
+          </div>
+          {error && (
+            <p className="text-red-500 text-sm mt-2 text-left">{error}</p>
+          )}
+          <p className="text-sm text-[var(--muted)] mt-2 text-left">
+            or{" "}
+            <a
+              href="/papers/new"
+              className="text-[var(--primary)] hover:underline"
+            >
+              upload a paper directly
+            </a>
+          </p>
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
           {[
+            {
+              title: "Discover",
+              desc: "Find relevant papers from a research question",
+            },
             {
               title: "Understand",
               desc: "Structured breakdowns of any research paper",
@@ -47,10 +126,6 @@ export default function Home() {
             {
               title: "Compare",
               desc: "Side-by-side analysis of multiple papers",
-            },
-            {
-              title: "Ideate",
-              desc: "Generate novel research ideas from literature",
             },
             {
               title: "Implement",
@@ -67,18 +142,38 @@ export default function Home() {
           ))}
         </div>
 
-        <div className="pt-6">
-          <button
-            onClick={() => router.push("/papers/new")}
-            className="px-8 py-3 bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white rounded-lg font-medium transition-colors"
-          >
-            Upload a Paper
-          </button>
-        </div>
+        {/* Past discovery runs */}
+        {loaded && runs.length > 0 && (
+          <div className="pt-6 text-left">
+            <h2 className="text-lg font-semibold mb-4">Recent Discoveries</h2>
+            <div className="space-y-3">
+              {runs.map((run) => (
+                <button
+                  key={run.id}
+                  onClick={() => router.push(`/discover/${run.id}`)}
+                  className="w-full text-left p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] hover:border-[var(--primary)]/30 transition-colors"
+                >
+                  <h3 className="font-medium mb-1 line-clamp-1">
+                    {run.question}
+                  </h3>
+                  <p className="text-sm text-[var(--muted)]">
+                    {run.status === "complete"
+                      ? `${run.num_results} papers found`
+                      : run.status === "running"
+                        ? "Searching..."
+                        : run.status === "failed"
+                          ? "Failed"
+                          : "Pending..."}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Paper library */}
         {loaded && papers.length > 0 && (
-          <div className="pt-8 text-left">
+          <div className="pt-6 text-left">
             <h2 className="text-lg font-semibold mb-4">Your Papers</h2>
             <div className="space-y-3">
               {papers.map((paper) => (

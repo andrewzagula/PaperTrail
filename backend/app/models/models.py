@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, Uuid, func
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, JSON, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -23,6 +23,7 @@ class User(Base):
     papers: Mapped[list["Paper"]] = relationship(back_populates="user")
     chats: Mapped[list["Chat"]] = relationship(back_populates="user")
     saved_items: Mapped[list["SavedItem"]] = relationship(back_populates="user")
+    discovery_runs: Mapped[list["DiscoveryRun"]] = relationship(back_populates="user")
 
 
 class Paper(Base):
@@ -119,3 +120,57 @@ class SavedItem(Base):
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="saved_items")
+
+
+class DiscoveryRun(Base):
+    __tablename__ = "discovery_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id"), nullable=False, index=True
+    )
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    generated_queries: Mapped[list | None] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending"
+    )  # pending, running, complete, failed
+    budget_used: Mapped[dict | None] = mapped_column(JSON)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="discovery_runs")
+    results: Mapped[list["DiscoveryResult"]] = relationship(
+        back_populates="run", cascade="all, delete-orphan"
+    )
+
+
+class DiscoveryResult(Base):
+    __tablename__ = "discovery_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, default=uuid.uuid4
+    )
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("discovery_runs.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    arxiv_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    title: Mapped[str] = mapped_column(String(1000), nullable=False)
+    authors: Mapped[str | None] = mapped_column(Text)
+    abstract: Mapped[str | None] = mapped_column(Text)
+    published: Mapped[str | None] = mapped_column(String(50))
+    relevance_score: Mapped[float | None] = mapped_column(Float)
+    relevance_reason: Mapped[str | None] = mapped_column(Text)
+    rank_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    paper_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("papers.id"), nullable=True, index=True
+    )  # set when user ingests this result
+
+    # Relationships
+    run: Mapped["DiscoveryRun"] = relationship(back_populates="results")
+    paper: Mapped["Paper | None"] = relationship()

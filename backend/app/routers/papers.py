@@ -52,6 +52,7 @@ class PaperResponse(BaseModel):
     abstract: str | None
     arxiv_url: str | None
     created_at: str
+    structured_breakdown: dict | None
     sections: list[SectionResponse]
 
     class Config:
@@ -290,6 +291,7 @@ def get_paper(paper_id: str, db: Session = Depends(get_db)):
         abstract=paper.abstract,
         arxiv_url=paper.arxiv_url,
         created_at=paper.created_at.isoformat() if paper.created_at else "",
+        structured_breakdown=paper.structured_breakdown,
         sections=[
             SectionResponse(
                 id=str(s.id),
@@ -323,3 +325,44 @@ def delete_paper(paper_id: str, db: Session = Depends(get_db)):
     db.commit()
 
     return {"status": "deleted", "id": paper_id}
+
+
+@router.post("/{paper_id}/analyze")
+def analyze_paper_endpoint(paper_id: str, db: Session = Depends(get_db)):
+    """Generate a structured breakdown of a paper."""
+    try:
+        pid = uuid.UUID(paper_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid paper ID")
+
+    paper = db.query(Paper).filter(Paper.id == pid).first()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    # Return cached breakdown if it exists
+    if paper.structured_breakdown:
+        return paper.structured_breakdown
+
+    sections = (
+        db.query(PaperSection)
+        .filter(PaperSection.paper_id == paper.id)
+        .order_by(PaperSection.section_order)
+        .all()
+    )
+
+    sections_data = [
+        {"title": s.section_title, "content": s.content}
+        for s in sections
+    ]
+
+    from app.services.analyzer import analyze_paper
+    breakdown = analyze_paper(
+        title=paper.title,
+        abstract=paper.abstract or "",
+        sections=sections_data,
+    )
+
+    paper.structured_breakdown = breakdown
+    db.commit()
+
+    return breakdown
