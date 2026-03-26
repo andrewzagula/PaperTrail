@@ -1,5 +1,3 @@
-"""Search arXiv API with keyword queries and parse results."""
-
 import asyncio
 import re
 from dataclasses import dataclass
@@ -7,7 +5,7 @@ from dataclasses import dataclass
 import httpx
 
 ARXIV_SEARCH_URL = "http://export.arxiv.org/api/query"
-RATE_LIMIT_DELAY = 3.0  # seconds between requests per arXiv guidelines
+RATE_LIMIT_DELAY = 3.0
 
 
 @dataclass
@@ -20,7 +18,6 @@ class ArxivResult:
 
 
 async def search_arxiv(query: str, max_results: int = 20) -> list[ArxivResult]:
-    """Search arXiv API with a keyword query. Returns parsed results."""
     params = {
         "search_query": f"all:{query}",
         "start": 0,
@@ -40,8 +37,6 @@ async def search_arxiv_multi(
     queries: list[str],
     max_results_per_query: int = 20,
 ) -> list[ArxivResult]:
-    """Run multiple arXiv searches sequentially (respecting rate limits) and
-    deduplicate results by arxiv_id."""
     all_results: list[ArxivResult] = []
     seen_ids: set[str] = set()
 
@@ -59,7 +54,6 @@ async def search_arxiv_multi(
 
 
 def _parse_atom_feed(xml: str) -> list[ArxivResult]:
-    """Parse arXiv Atom XML feed into ArxivResult objects."""
     results = []
     entries = re.findall(r"<entry>(.*?)</entry>", xml, re.DOTALL)
 
@@ -94,6 +88,5 @@ def _parse_atom_feed(xml: str) -> list[ArxivResult]:
 
 
 def _extract_arxiv_id(entry_xml: str) -> str | None:
-    """Extract arXiv ID from an entry's <id> tag."""
     id_match = re.search(r"<id>.*?/abs/(\d{4}\.\d{4,5})(v\d+)?</id>", entry_xml)
     return id_match.group(1) if id_match else None

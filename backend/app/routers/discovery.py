@@ -1,5 +1,3 @@
-"""Discovery endpoints: question → search → rank → ingest."""
-
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -12,9 +10,6 @@ from app.models.models import DiscoveryResult, DiscoveryRun, User
 router = APIRouter(prefix="/discover", tags=["discovery"])
 
 DEFAULT_USER_EMAIL = "local@papertrail.dev"
-
-
-# --- Request / Response schemas ---
 
 
 class DiscoverRequest(BaseModel):
@@ -32,7 +27,7 @@ class DiscoveryResultResponse(BaseModel):
     relevance_score: float | None
     relevance_reason: str | None
     rank_order: int
-    paper_id: str | None  # set if ingested
+    paper_id: str | None
 
     class Config:
         from_attributes = True
@@ -61,10 +56,6 @@ class DiscoveryRunListItem(BaseModel):
 
     class Config:
         from_attributes = True
-
-
-# --- Helpers ---
-
 
 def _get_or_create_default_user(db: Session) -> User:
     user = db.query(User).filter(User.email == DEFAULT_USER_EMAIL).first()
@@ -104,7 +95,6 @@ def _run_to_response(run: DiscoveryRun) -> DiscoveryRunResponse:
 
 
 async def _execute_discovery(run_id: uuid.UUID, question: str, max_results: int):
-    """Run discovery pipeline in the background and persist results."""
     from app.database import SessionLocal
     from app.services.discovery import run_discovery
 
@@ -150,16 +140,12 @@ async def _execute_discovery(run_id: uuid.UUID, question: str, max_results: int)
         db.close()
 
 
-# --- Endpoints ---
-
-
 @router.post("/", response_model=DiscoveryRunResponse)
 async def start_discovery(
     req: DiscoverRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Start a discovery run from a research question."""
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
@@ -183,7 +169,6 @@ async def start_discovery(
 
 @router.get("/", response_model=list[DiscoveryRunListItem])
 def list_discovery_runs(db: Session = Depends(get_db)):
-    """List all past discovery runs."""
     user = _get_or_create_default_user(db)
     runs = (
         db.query(DiscoveryRun)
@@ -205,7 +190,6 @@ def list_discovery_runs(db: Session = Depends(get_db)):
 
 @router.get("/{run_id}", response_model=DiscoveryRunResponse)
 def get_discovery_run(run_id: str, db: Session = Depends(get_db)):
-    """Get a discovery run with its ranked results."""
     try:
         rid = uuid.UUID(run_id)
     except ValueError:
@@ -224,7 +208,6 @@ async def ingest_discovery_result(
     result_id: str,
     db: Session = Depends(get_db),
 ):
-    """Ingest a discovery result into the paper library using the existing pipeline."""
     try:
         rid = uuid.UUID(run_id)
         rsid = uuid.UUID(result_id)
@@ -249,7 +232,6 @@ async def ingest_discovery_result(
             "paper_id": str(result.paper_id),
         }
 
-    # Use existing ingestion pipeline
     from app.services.arxiv_fetcher import download_arxiv_pdf, fetch_arxiv_metadata
     from app.services.embedder import embed_and_store_sections
     from app.services.pdf_parser import extract_text
@@ -258,7 +240,6 @@ async def ingest_discovery_result(
 
     user = _get_or_create_default_user(db)
 
-    # Fetch metadata + PDF
     metadata = await fetch_arxiv_metadata(result.arxiv_id)
     pdf_path = await download_arxiv_pdf(result.arxiv_id)
 
@@ -298,12 +279,10 @@ async def ingest_discovery_result(
             "content": s["content"],
         })
 
-    # Link discovery result to paper
     result.paper_id = paper.id
     db.commit()
     db.refresh(paper)
 
-    # Embed (non-fatal)
     num_chunks = 0
     try:
         num_chunks = embed_and_store_sections(

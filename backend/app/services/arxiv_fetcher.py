@@ -1,5 +1,3 @@
-"""Fetch papers from arXiv given a URL or paper ID."""
-
 import re
 from pathlib import Path
 
@@ -16,14 +14,6 @@ PDF_DIR.mkdir(exist_ok=True)
 
 
 def extract_arxiv_id(url_or_id: str) -> str | None:
-    """Extract arXiv paper ID from a URL or raw ID string.
-
-    Handles:
-        - https://arxiv.org/abs/2301.00001
-        - https://arxiv.org/pdf/2301.00001
-        - https://arxiv.org/abs/2301.00001v2
-        - 2301.00001
-    """
     match = ARXIV_ID_PATTERN.search(url_or_id)
     if match:
         return match.group(1)
@@ -31,7 +21,6 @@ def extract_arxiv_id(url_or_id: str) -> str | None:
 
 
 async def fetch_arxiv_metadata(paper_id: str) -> dict:
-    """Fetch title, authors, and abstract from the arXiv API."""
     url = ARXIV_API_URL.format(paper_id=paper_id)
     async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
         resp = await client.get(url)
@@ -39,9 +28,7 @@ async def fetch_arxiv_metadata(paper_id: str) -> dict:
 
     xml = resp.text
 
-    # Simple XML parsing — arXiv Atom feed
     title = _extract_tag(xml, "title")
-    # First <title> is the feed title ("ArXiv Query:..."), second is the paper
     titles = re.findall(r"<title[^>]*>(.*?)</title>", xml, re.DOTALL)
     title = titles[-1].strip().replace("\n", " ") if len(titles) > 1 else ""
 
@@ -57,7 +44,6 @@ async def fetch_arxiv_metadata(paper_id: str) -> dict:
 
 
 async def download_arxiv_pdf(paper_id: str) -> Path:
-    """Download the PDF from arXiv and save to data/pdfs/."""
     url = ARXIV_PDF_URL.format(paper_id=paper_id)
     pdf_path = PDF_DIR / f"{paper_id}.pdf"
 
@@ -73,6 +59,5 @@ async def download_arxiv_pdf(paper_id: str) -> Path:
 
 
 def _extract_tag(xml: str, tag: str) -> str:
-    """Extract first occurrence of a tag's text content."""
     match = re.search(rf"<{tag}[^>]*>(.*?)</{tag}>", xml, re.DOTALL)
     return match.group(1) if match else ""

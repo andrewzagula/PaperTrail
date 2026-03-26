@@ -6,7 +6,6 @@ _client: chromadb.ClientAPI | None = None
 
 
 def get_chroma_client() -> chromadb.ClientAPI:
-    """Return a persistent ChromaDB client (singleton)."""
     global _client
     if _client is None:
         _client = chromadb.PersistentClient(path=str(settings.chroma_dir))
@@ -14,7 +13,6 @@ def get_chroma_client() -> chromadb.ClientAPI:
 
 
 def get_collection(name: str = "paper_sections") -> chromadb.Collection:
-    """Get or create a ChromaDB collection."""
     client = get_chroma_client()
     return client.get_or_create_collection(
         name=name,
@@ -28,7 +26,6 @@ def add_embeddings(
     documents: list[str],
     metadatas: list[dict],
 ) -> None:
-    """Add section embeddings to the vector store."""
     collection = get_collection()
     collection.add(
         ids=ids,
@@ -43,7 +40,6 @@ def query_embeddings(
     paper_id: str | None = None,
     n_results: int = 5,
 ) -> dict:
-    """Query similar sections. Optionally filter by paper_id."""
     collection = get_collection()
     where_filter = {"paper_id": paper_id} if paper_id else None
     return collection.query(
@@ -55,6 +51,5 @@ def query_embeddings(
 
 
 def delete_by_paper(paper_id: str) -> None:
-    """Delete all embeddings for a given paper."""
     collection = get_collection()
     collection.delete(where={"paper_id": paper_id})

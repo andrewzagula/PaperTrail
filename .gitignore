@@ -33,7 +33,7 @@ data/
 # Dev-only files (not shipped to open source consumers)
 AGENTS.md
 CLAUDE.md
-PROGRESS.md
+PAPERTRAIL.md
 .claude/
 
 # Logs

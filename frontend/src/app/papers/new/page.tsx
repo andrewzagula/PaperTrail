@@ -98,8 +98,6 @@ export default function NewPaper() {
           {error}
         </div>
       )}
-
-      {/* arXiv URL input */}
       <form onSubmit={handleArxivSubmit} className="mb-8">
         <label className="block text-sm font-medium mb-2">arXiv URL</label>
         <div className="flex gap-3">
@@ -126,8 +124,6 @@ export default function NewPaper() {
         <span className="text-sm text-[var(--muted)]">or</span>
         <div className="flex-1 h-px bg-[var(--border)]" />
       </div>
-
-      {/* PDF upload drop zone */}
       <div
         onDragOver={(e) => {
           e.preventDefault();

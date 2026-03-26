@@ -78,8 +78,6 @@ export default function Home() {
           Start with a research question. Discover, understand, compare, and
           implement.
         </p>
-
-        {/* Discovery input */}
         <div className="pt-2">
           <div className="flex gap-3">
             <input
@@ -141,8 +139,6 @@ export default function Home() {
             </div>
           ))}
         </div>
-
-        {/* Past discovery runs */}
         {loaded && runs.length > 0 && (
           <div className="pt-6 text-left">
             <h2 className="text-lg font-semibold mb-4">Recent Discoveries</h2>
@@ -170,8 +166,6 @@ export default function Home() {
             </div>
           </div>
         )}
-
-        {/* Paper library */}
         {loaded && papers.length > 0 && (
           <div className="pt-6 text-left">
             <h2 className="text-lg font-semibold mb-4">Your Papers</h2>

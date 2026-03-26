@@ -1,22 +1,15 @@
-"""Generate embeddings for paper sections and store in ChromaDB."""
-
 from openai import OpenAI
 
 from app.config import settings
 from app.services.vector_store import add_embeddings
 
 EMBEDDING_MODEL = "text-embedding-3-small"
-CHUNK_SIZE = 500  # target tokens per chunk (approx 4 chars per token)
-CHUNK_CHAR_SIZE = CHUNK_SIZE * 4  # rough character estimate
-CHUNK_OVERLAP = 200  # character overlap between chunks
+CHUNK_SIZE = 500
+CHUNK_CHAR_SIZE = CHUNK_SIZE * 4
+CHUNK_OVERLAP = 200
 
 
 def chunk_text(text: str, chunk_size: int = CHUNK_CHAR_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
-    """Split text into overlapping chunks.
-
-    Tries to break on paragraph boundaries, falls back to sentence
-    boundaries, then hard character splits.
-    """
     if len(text) <= chunk_size:
         return [text]
 
@@ -30,13 +23,11 @@ def chunk_text(text: str, chunk_size: int = CHUNK_CHAR_SIZE, overlap: int = CHUN
             chunks.append(text[start:])
             break
 
-        # Try to break at a paragraph boundary
         break_point = text.rfind("\n\n", start + chunk_size // 2, end)
         if break_point == -1:
-            # Try sentence boundary
             break_point = text.rfind(". ", start + chunk_size // 2, end)
             if break_point != -1:
-                break_point += 1  # include the period
+                break_point += 1
         if break_point == -1:
             break_point = end
 
@@ -47,7 +38,6 @@ def chunk_text(text: str, chunk_size: int = CHUNK_CHAR_SIZE, overlap: int = CHUN
 
 
 def generate_embeddings(texts: list[str]) -> list[list[float]]:
-    """Generate embeddings for a list of texts using OpenAI."""
     client = OpenAI(api_key=settings.openai_api_key)
     response = client.embeddings.create(
         model=EMBEDDING_MODEL,
@@ -60,15 +50,6 @@ def embed_and_store_sections(
     paper_id: str,
     sections: list[dict],
 ) -> int:
-    """Chunk sections, generate embeddings, and store in ChromaDB.
-
-    Args:
-        paper_id: UUID of the paper (as string).
-        sections: List of dicts with "id", "title", "content".
-
-    Returns:
-        Number of chunks embedded.
-    """
     all_ids: list[str] = []
     all_texts: list[str] = []
     all_metadatas: list[dict] = []
@@ -89,7 +70,6 @@ def embed_and_store_sections(
     if not all_texts:
         return 0
 
-    # Generate embeddings in batches (OpenAI supports up to 2048 inputs)
     batch_size = 100
     all_embeddings: list[list[float]] = []
     for i in range(0, len(all_texts), batch_size):
@@ -97,7 +77,6 @@ def embed_and_store_sections(
         embeddings = generate_embeddings(batch)
         all_embeddings.extend(embeddings)
 
-    # Store in ChromaDB
     add_embeddings(
         ids=all_ids,
         embeddings=all_embeddings,

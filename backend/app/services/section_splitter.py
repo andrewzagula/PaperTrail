@@ -1,8 +1,5 @@
-"""Split raw paper text into sections using heading heuristics."""
-
 import re
 
-# Common section headings in research papers
 STANDARD_HEADINGS = [
     "abstract",
     "introduction",
@@ -35,21 +32,16 @@ STANDARD_HEADINGS = [
     "acknowledgments",
 ]
 
-# Patterns for detecting section headings
 HEADING_PATTERNS = [
-    # "1. Introduction" or "1 Introduction"
     re.compile(
         r"^(\d+\.?\s+)([A-Z][A-Za-z\s&:–-]{2,60})$", re.MULTILINE
     ),
-    # "A. Appendix" or "A Appendix"
     re.compile(
         r"^([A-Z]\.?\s+)([A-Z][A-Za-z\s&:–-]{2,60})$", re.MULTILINE
     ),
-    # "INTRODUCTION" (all caps, standalone line)
     re.compile(
         r"^([A-Z][A-Z\s&:–-]{2,60})$", re.MULTILINE
     ),
-    # "Introduction" or "Related Work" (title-case, standalone line)
     re.compile(
         r"^([A-Z][a-z]+(?:\s+[A-Za-z]+){0,5})$", re.MULTILINE
     ),
@@ -57,10 +49,6 @@ HEADING_PATTERNS = [
 
 
 def split_into_sections(raw_text: str) -> list[dict]:
-    """Split paper text into sections.
-
-    Returns a list of dicts: [{"title": str, "content": str, "order": int}, ...]
-    """
     lines = raw_text.split("\n")
     sections: list[dict] = []
     current_title = "Preamble"
@@ -75,7 +63,6 @@ def split_into_sections(raw_text: str) -> list[dict]:
 
         heading = _detect_heading(stripped)
         if heading:
-            # Save previous section
             content = "\n".join(current_lines).strip()
             if content:
                 sections.append({
@@ -89,7 +76,6 @@ def split_into_sections(raw_text: str) -> list[dict]:
         else:
             current_lines.append(line)
 
-    # Save last section
     content = "\n".join(current_lines).strip()
     if content:
         sections.append({
@@ -98,8 +84,6 @@ def split_into_sections(raw_text: str) -> list[dict]:
             "order": order,
         })
 
-    # If no sections were detected (just Preamble), try to at least
-    # separate the abstract from the body
     if len(sections) <= 1:
         sections = _fallback_split(raw_text)
 
@@ -107,30 +91,24 @@ def split_into_sections(raw_text: str) -> list[dict]:
 
 
 def _detect_heading(line: str) -> str | None:
-    """Check if a line is a section heading. Returns the cleaned heading or None."""
-    # Pattern 1: Numbered headings like "1. Introduction" or "3 Method"
-    # These are high-confidence — accept if they match a known heading
     numbered_match = HEADING_PATTERNS[0].match(line)
     if numbered_match:
         heading = numbered_match.group(2).strip()
         if _is_known_heading(heading):
             return heading
 
-    # Pattern 2: Letter-prefixed like "A. Appendix"
     letter_match = HEADING_PATTERNS[1].match(line)
     if letter_match:
         heading = letter_match.group(2).strip()
         if _is_known_heading(heading):
             return heading
 
-    # Pattern 3: ALL CAPS standalone line — only accept if it matches a known heading
     caps_match = HEADING_PATTERNS[2].match(line)
     if caps_match:
         heading = caps_match.group(1).strip()
         if _is_known_heading(heading):
             return heading
 
-    # Pattern 4: Title-case standalone line — only accept if it matches a known heading
     title_match = HEADING_PATTERNS[3].match(line)
     if title_match:
         heading = title_match.group(1).strip()
@@ -141,15 +119,11 @@ def _detect_heading(line: str) -> str | None:
 
 
 def _is_known_heading(text: str) -> bool:
-    """Check if text matches a known section heading."""
     normalized = text.lower().strip().rstrip(":")
-    # Must be at least 5 characters to avoid matching table labels like SRC, REF
     if len(normalized) < 5:
         return False
-    # Direct match against known headings
     if normalized in STANDARD_HEADINGS:
         return True
-    # Check if the normalized text contains a known heading as a whole word
     for heading in STANDARD_HEADINGS:
         if heading in normalized:
             return True
@@ -157,8 +131,6 @@ def _is_known_heading(text: str) -> bool:
 
 
 def _fallback_split(raw_text: str) -> list[dict]:
-    """If heading detection fails, split into rough chunks."""
-    # Try to find "Abstract" in the text
     abstract_match = re.search(
         r"(?i)\babstract\b[:\s]*(.*?)(?=\n\n|\bintroduction\b|\b1[\.\s])",
         raw_text,

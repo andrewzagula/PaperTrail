@@ -48,9 +48,7 @@ export default function DiscoverResultsPage() {
       const data = await res.json();
       setRun(data);
       return data.status;
-    } catch {
-      // ignore
-    }
+    } catch {}
   }, [runId]);
 
   useEffect(() => {
@@ -82,7 +80,6 @@ export default function DiscoverResultsPage() {
       if (!res.ok) throw new Error();
       const data = await res.json();
       setIngesting((prev) => ({ ...prev, [resultId]: "done" }));
-      // Update result's paper_id locally
       setRun((prev) => {
         if (!prev) return prev;
         return {
@@ -121,7 +118,6 @@ export default function DiscoverResultsPage() {
   return (
     <div className="min-h-screen px-6 py-12">
       <div className="max-w-3xl mx-auto space-y-8">
-        {/* Header */}
         <div>
           <a
             href="/"
@@ -131,7 +127,6 @@ export default function DiscoverResultsPage() {
           </a>
           <h1 className="text-3xl font-bold mt-4 mb-2">{run.question}</h1>
 
-          {/* Status */}
           {isRunning && (
             <div className="flex items-center gap-3 mt-4 p-4 rounded-lg border border-[var(--border)] bg-[var(--card)]">
               <div className="w-5 h-5 border-2 border-[var(--primary)] border-t-transparent rounded-full animate-spin" />
@@ -159,8 +154,6 @@ export default function DiscoverResultsPage() {
             </div>
           )}
         </div>
-
-        {/* Generated queries (collapsible) */}
         {run.generated_queries && run.generated_queries.length > 0 && (
           <div>
             <button
@@ -190,8 +183,6 @@ export default function DiscoverResultsPage() {
             )}
           </div>
         )}
-
-        {/* Results */}
         {run.status === "complete" && run.results.length === 0 && (
           <p className="text-[var(--muted)]">
             No relevant papers found. Try rephrasing your question.

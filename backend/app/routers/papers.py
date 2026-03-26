@@ -1,5 +1,3 @@
-"""Paper ingestion and retrieval endpoints."""
-
 import uuid
 from pathlib import Path
 
@@ -25,9 +23,6 @@ PDF_DIR = settings.data_dir / "pdfs"
 PDF_DIR.mkdir(exist_ok=True)
 
 DEFAULT_USER_EMAIL = "local@papertrail.dev"
-
-
-# --- Request / Response schemas ---
 
 
 class IngestArxivRequest(BaseModel):
@@ -70,12 +65,7 @@ class PaperListItem(BaseModel):
     class Config:
         from_attributes = True
 
-
-# --- Helpers ---
-
-
 def _get_or_create_default_user(db: Session) -> User:
-    """Get or create the default local user."""
     user = db.query(User).filter(User.email == DEFAULT_USER_EMAIL).first()
     if not user:
         user = User(email=DEFAULT_USER_EMAIL, name="Local User")
@@ -96,7 +86,6 @@ def _store_paper(
     raw_text: str,
     sections_data: list[dict],
 ) -> Paper:
-    """Create Paper and PaperSection rows, then embed."""
     paper = Paper(
         user_id=user_id,
         title=title,
@@ -107,7 +96,7 @@ def _store_paper(
         raw_text=raw_text,
     )
     db.add(paper)
-    db.flush()  # get paper.id
+    db.flush()
 
     section_records = []
     for s in sections_data:
@@ -128,7 +117,6 @@ def _store_paper(
     db.commit()
     db.refresh(paper)
 
-    # Embed sections into ChromaDB (non-blocking — paper is saved even if embedding fails)
     num_chunks = 0
     try:
         num_chunks = embed_and_store_sections(
@@ -141,31 +129,23 @@ def _store_paper(
     return paper, num_chunks
 
 
-# --- Endpoints ---
-
-
 @router.post("/ingest/arxiv")
 async def ingest_arxiv(req: IngestArxivRequest, db: Session = Depends(get_db)):
-    """Ingest a paper from an arXiv URL."""
     arxiv_id = extract_arxiv_id(req.arxiv_url)
     if not arxiv_id:
         raise HTTPException(status_code=400, detail="Invalid arXiv URL or ID")
 
     user = _get_or_create_default_user(db)
 
-    # Fetch metadata and PDF
     metadata = await fetch_arxiv_metadata(arxiv_id)
     pdf_path = await download_arxiv_pdf(arxiv_id)
 
-    # Parse PDF
     raw_text = extract_text(pdf_path)
     if not raw_text.strip():
         raise HTTPException(status_code=422, detail="Could not extract text from PDF")
 
-    # Split into sections
     sections_data = split_into_sections(raw_text)
 
-    # Use arXiv metadata (more reliable than PDF metadata)
     title = metadata["title"] or "Untitled"
     authors = metadata["authors"] or ""
     abstract = metadata["abstract"] or ""
@@ -192,31 +172,25 @@ async def ingest_arxiv(req: IngestArxivRequest, db: Session = Depends(get_db)):
 
 @router.post("/ingest/pdf")
 async def ingest_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """Ingest a paper from a direct PDF upload."""
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="File must be a PDF")
 
     user = _get_or_create_default_user(db)
 
-    # Save uploaded file
     pdf_path = PDF_DIR / f"{uuid.uuid4()}.pdf"
     content = await file.read()
     pdf_path.write_bytes(content)
 
-    # Parse PDF
     raw_text = extract_text(pdf_path)
     if not raw_text.strip():
         raise HTTPException(status_code=422, detail="Could not extract text from PDF")
 
-    # Extract metadata from PDF
     pdf_meta = extract_metadata(pdf_path)
     sections_data = split_into_sections(raw_text)
 
-    # Try to get title from PDF metadata, fall back to filename
     title = pdf_meta["title"] or Path(file.filename).stem
     authors = pdf_meta["authors"] or ""
 
-    # Try to extract abstract from sections
     abstract = ""
     for s in sections_data:
         if s["title"].lower() in ("abstract", "preamble"):
@@ -245,7 +219,6 @@ async def ingest_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)
 
 @router.get("/", response_model=list[PaperListItem])
 def list_papers(db: Session = Depends(get_db)):
-    """List all ingested papers."""
     user = _get_or_create_default_user(db)
     papers = (
         db.query(Paper)
@@ -268,7 +241,6 @@ def list_papers(db: Session = Depends(get_db)):
 
 @router.get("/{paper_id}", response_model=PaperResponse)
 def get_paper(paper_id: str, db: Session = Depends(get_db)):
-    """Get a paper with all its sections."""
     try:
         pid = uuid.UUID(paper_id)
     except ValueError:
@@ -307,7 +279,6 @@ def get_paper(paper_id: str, db: Session = Depends(get_db)):
 
 @router.delete("/{paper_id}")
 def delete_paper(paper_id: str, db: Session = Depends(get_db)):
-    """Delete a paper and its sections + embeddings."""
     try:
         pid = uuid.UUID(paper_id)
     except ValueError:
@@ -316,11 +287,9 @@ def delete_paper(paper_id: str, db: Session = Depends(get_db)):
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
 
-    # Delete embeddings from ChromaDB
     from app.services.vector_store import delete_by_paper
     delete_by_paper(paper_id)
 
-    # Delete from SQLite (cascade deletes sections)
     db.delete(paper)
     db.commit()
 
@@ -329,7 +298,6 @@ def delete_paper(paper_id: str, db: Session = Depends(get_db)):
 
 @router.post("/{paper_id}/analyze")
 def analyze_paper_endpoint(paper_id: str, db: Session = Depends(get_db)):
-    """Generate a structured breakdown of a paper."""
     try:
         pid = uuid.UUID(paper_id)
     except ValueError:
@@ -339,7 +307,6 @@ def analyze_paper_endpoint(paper_id: str, db: Session = Depends(get_db)):
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
 
-    # Return cached breakdown if it exists
     if paper.structured_breakdown:
         return paper.structured_breakdown
 

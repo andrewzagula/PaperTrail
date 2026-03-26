@@ -10,7 +10,6 @@ from app.routers import discovery, papers
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables on startup
     init_db()
     yield
 

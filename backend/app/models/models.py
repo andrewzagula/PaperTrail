@@ -19,7 +19,6 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    # Relationships
     papers: Mapped[list["Paper"]] = relationship(back_populates="user")
     chats: Mapped[list["Chat"]] = relationship(back_populates="user")
     saved_items: Mapped[list["SavedItem"]] = relationship(back_populates="user")
@@ -46,7 +45,6 @@ class Paper(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    # Relationships
     user: Mapped["User"] = relationship(back_populates="papers")
     sections: Mapped[list["PaperSection"]] = relationship(
         back_populates="paper", cascade="all, delete-orphan"
@@ -67,9 +65,7 @@ class PaperSection(Base):
     section_order: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     chunk_index: Mapped[int | None] = mapped_column(Integer)
-    # Note: embeddings are stored in ChromaDB, linked by section id
 
-    # Relationships
     paper: Mapped["Paper"] = relationship(back_populates="sections")
 
 
@@ -87,14 +83,13 @@ class Chat(Base):
     )
     role: Mapped[str] = mapped_column(
         String(20), nullable=False
-    )  # "user" or "assistant"
+    )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     citations: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
 
-    # Relationships
     user: Mapped["User"] = relationship(back_populates="chats")
     paper: Mapped["Paper"] = relationship(back_populates="chats")
 
@@ -110,15 +105,14 @@ class SavedItem(Base):
     )
     item_type: Mapped[str] = mapped_column(
         String(50), nullable=False, index=True
-    )  # "comparison", "idea", "implementation"
+    )
     title: Mapped[str] = mapped_column(String(1000), nullable=False)
     data: Mapped[dict] = mapped_column(JSON, nullable=False)
-    paper_ids: Mapped[list | None] = mapped_column(JSON)  # related paper UUIDs
+    paper_ids: Mapped[list | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
-    # Relationships
     user: Mapped["User"] = relationship(back_populates="saved_items")
 
 
@@ -135,14 +129,13 @@ class DiscoveryRun(Base):
     generated_queries: Mapped[list | None] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="pending"
-    )  # pending, running, complete, failed
+    )
     budget_used: Mapped[dict | None] = mapped_column(JSON)
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
-    # Relationships
     user: Mapped["User"] = relationship(back_populates="discovery_runs")
     results: Mapped[list["DiscoveryResult"]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
@@ -169,8 +162,7 @@ class DiscoveryResult(Base):
     rank_order: Mapped[int] = mapped_column(Integer, nullable=False)
     paper_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("papers.id"), nullable=True, index=True
-    )  # set when user ingests this result
+    )
 
-    # Relationships
     run: Mapped["DiscoveryRun"] = relationship(back_populates="results")
     paper: Mapped["Paper | None"] = relationship()

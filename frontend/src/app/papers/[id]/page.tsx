@@ -121,7 +121,6 @@ export default function PaperView() {
 
   return (
     <div className="min-h-screen">
-      {/* Header */}
       <div className="border-b border-[var(--border)] p-8">
         <div className="max-w-5xl mx-auto">
           <a
@@ -158,8 +157,6 @@ export default function PaperView() {
           )}
         </div>
       </div>
-
-      {/* Structured Breakdown */}
       <div className="max-w-5xl mx-auto px-8 pt-8">
         {paper.structured_breakdown ? (
           <div className="mb-8">
@@ -200,10 +197,7 @@ export default function PaperView() {
           </div>
         )}
       </div>
-
-      {/* Sections */}
       <div className="max-w-5xl mx-auto flex gap-6 px-8 pb-8">
-        {/* Section nav */}
         <nav className="w-56 shrink-0 sticky top-8 self-start">
           <h3 className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wide mb-3">
             Sections
@@ -225,8 +219,6 @@ export default function PaperView() {
             ))}
           </ul>
         </nav>
-
-        {/* Section content */}
         <div className="flex-1 min-w-0">
           {paper.sections.map((section) => (
             <div

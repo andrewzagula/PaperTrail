@@ -1,5 +1,3 @@
-"""Discovery orchestration: question → queries → search → rank."""
-
 import json
 
 from openai import OpenAI
@@ -7,14 +5,12 @@ from openai import OpenAI
 from app.config import settings
 from app.services.arxiv_searcher import ArxivResult, search_arxiv_multi
 
-# Budget defaults
 DEFAULT_MAX_QUERIES = 3
 DEFAULT_MAX_RESULTS_PER_QUERY = 20
 DEFAULT_MAX_RETURN = 10
 
 
 async def generate_search_queries(question: str, max_queries: int = DEFAULT_MAX_QUERIES) -> list[str]:
-    """Use LLM to generate targeted arXiv search queries from a research question."""
     client = OpenAI(api_key=settings.openai_api_key)
 
     resp = client.chat.completions.create(
@@ -43,7 +39,6 @@ async def generate_search_queries(question: str, max_queries: int = DEFAULT_MAX_
     )
 
     text = resp.choices[0].message.content.strip()
-    # Strip markdown code fences if present
     if text.startswith("```"):
         text = text.split("\n", 1)[1] if "\n" in text else text[3:]
         if text.endswith("```"):
@@ -61,13 +56,11 @@ async def rank_results(
     results: list[ArxivResult],
     max_return: int = DEFAULT_MAX_RETURN,
 ) -> list[dict]:
-    """Use LLM to rank and score search results by relevance to the question."""
     if not results:
         return []
 
     client = OpenAI(api_key=settings.openai_api_key)
 
-    # Build papers list for the prompt
     papers_text = ""
     for i, r in enumerate(results):
         abstract_snippet = r.abstract[:500] if r.abstract else "No abstract"
@@ -114,7 +107,6 @@ async def rank_results(
     if not isinstance(rankings, list):
         raise ValueError("LLM did not return a JSON array")
 
-    # Map back to results with scores
     ranked = []
     for rank_entry in rankings[:max_return]:
         idx = rank_entry.get("index", -1)
@@ -130,7 +122,6 @@ async def rank_results(
                 "relevance_reason": rank_entry.get("reason", ""),
             })
 
-    # Sort by score descending
     ranked.sort(key=lambda x: x["relevance_score"], reverse=True)
     return ranked
 
@@ -141,19 +132,12 @@ async def run_discovery(
     max_results_per_query: int = DEFAULT_MAX_RESULTS_PER_QUERY,
     max_return: int = DEFAULT_MAX_RETURN,
 ) -> dict:
-    """Full discovery pipeline: question → queries → search → rank.
-
-    Returns dict with keys: queries, total_found, ranked_results, budget_used.
-    """
-    # Step 1: Generate queries
     queries = await generate_search_queries(question, max_queries=max_queries)
 
-    # Step 2: Search arXiv
     all_results = await search_arxiv_multi(
         queries, max_results_per_query=max_results_per_query,
     )
 
-    # Step 3: Rank results
     ranked = await rank_results(question, all_results, max_return=max_return)
 
     return {

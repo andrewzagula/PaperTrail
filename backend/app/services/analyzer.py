@@ -1,5 +1,3 @@
-"""Structured paper analysis using OpenAI."""
-
 import json
 
 from openai import OpenAI
@@ -15,24 +13,12 @@ BREAKDOWN_FIELDS = [
     "future_work",
 ]
 
-MAX_SECTION_CHARS = 80000  # truncate total input to fit context window
+MAX_SECTION_CHARS = 80000
 
 
 def analyze_paper(title: str, abstract: str, sections: list[dict]) -> dict:
-    """Generate a structured breakdown of a paper.
-
-    Args:
-        title: Paper title.
-        abstract: Paper abstract.
-        sections: List of dicts with 'title' and 'content' keys.
-
-    Returns:
-        Dict with keys: problem, method, key_contributions, results,
-        limitations, future_work — each a string.
-    """
     client = OpenAI(api_key=settings.openai_api_key)
 
-    # Build paper content, truncating if needed
     paper_text = f"Title: {title}\n\nAbstract: {abstract}\n\n"
     char_budget = MAX_SECTION_CHARS - len(paper_text)
 
@@ -76,7 +62,6 @@ def analyze_paper(title: str, abstract: str, sections: list[dict]) -> dict:
     text = resp.choices[0].message.content.strip()
     breakdown = json.loads(text)
 
-    # Ensure all expected fields exist
     for field in BREAKDOWN_FIELDS:
         if field not in breakdown:
             breakdown[field] = "Not explicitly discussed in the paper."
