@@ -1,7 +1,18 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, JSON, String, Text, Uuid, func
+from sqlalchemy import (
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -49,6 +60,9 @@ class Paper(Base):
     sections: Mapped[list["PaperSection"]] = relationship(
         back_populates="paper", cascade="all, delete-orphan"
     )
+    embedding_states: Mapped[list["PaperEmbeddingState"]] = relationship(
+        back_populates="paper", cascade="all, delete-orphan"
+    )
     chats: Mapped[list["Chat"]] = relationship(back_populates="paper")
 
 
@@ -67,6 +81,34 @@ class PaperSection(Base):
     chunk_index: Mapped[int | None] = mapped_column(Integer)
 
     paper: Mapped["Paper"] = relationship(back_populates="sections")
+
+
+class PaperEmbeddingState(Base):
+    __tablename__ = "paper_embedding_states"
+    __table_args__ = (
+        UniqueConstraint(
+            "paper_id",
+            "embedding_provider",
+            "embedding_model",
+            name="uq_paper_embedding_backend",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, default=uuid.uuid4
+    )
+    paper_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("papers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    embedding_provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    embedding_model: Mapped[str] = mapped_column(String(255), nullable=False)
+    collection_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    embedded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    paper: Mapped["Paper"] = relationship(back_populates="embedding_states")
 
 
 class Chat(Base):

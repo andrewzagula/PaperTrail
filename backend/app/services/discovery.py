@@ -1,21 +1,49 @@
-import json
-
-from openai import OpenAI
-
 from app.config import settings
+from app.llm import get_structured_client
 from app.services.arxiv_searcher import ArxivResult, search_arxiv_multi
 
 DEFAULT_MAX_QUERIES = 3
 DEFAULT_MAX_RESULTS_PER_QUERY = 20
 DEFAULT_MAX_RETURN = 10
+QUERY_RESPONSE_JSON_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "queries": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+    },
+    "required": ["queries"],
+}
+RANKING_RESPONSE_JSON_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "rankings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "index": {"type": "integer"},
+                    "score": {"type": "number"},
+                    "reason": {"type": "string"},
+                },
+                "required": ["index", "score", "reason"],
+            },
+        },
+    },
+    "required": ["rankings"],
+}
 
 
 async def generate_search_queries(question: str, max_queries: int = DEFAULT_MAX_QUERIES) -> list[str]:
-    client = OpenAI(api_key=settings.openai_api_key)
-
-    resp = client.chat.completions.create(
-        model="gpt-4o-mini",
+    payload = get_structured_client().generate_structured(
+        model=settings.discovery_query_model,
         temperature=0.3,
+        schema_name="discovery_queries",
+        schema=QUERY_RESPONSE_JSON_SCHEMA,
         messages=[
             {
                 "role": "system",
@@ -23,31 +51,23 @@ async def generate_search_queries(question: str, max_queries: int = DEFAULT_MAX_
                     "You generate arXiv search queries. Given a research question, "
                     "produce targeted keyword queries that would find relevant papers "
                     "on arXiv. Each query should use different angles or terminology "
-                    "to maximize coverage. Output ONLY a JSON array of strings, "
-                    "no other text."
+                    "to maximize coverage. Return a JSON object with a single "
+                    '"queries" field containing an array of strings.'
                 ),
             },
             {
                 "role": "user",
                 "content": (
                     f"Research question: {question}\n\n"
-                    f"Generate exactly {max_queries} arXiv search queries as a JSON array. "
-                    "Use specific technical terms. Vary terminology across queries."
+                    f"Generate exactly {max_queries} arXiv search queries inside the "
+                    '"queries" array. Use specific technical terms. Vary terminology across '
+                    "queries."
                 ),
             },
         ],
     )
 
-    text = resp.choices[0].message.content.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
-
-    queries = json.loads(text)
-    if not isinstance(queries, list):
-        raise ValueError("LLM did not return a JSON array")
+    queries = payload.get("queries", [])
     return [str(q) for q in queries[:max_queries]]
 
 
@@ -59,8 +79,6 @@ async def rank_results(
     if not results:
         return []
 
-    client = OpenAI(api_key=settings.openai_api_key)
-
     papers_text = ""
     for i, r in enumerate(results):
         abstract_snippet = r.abstract[:500] if r.abstract else "No abstract"
@@ -70,18 +88,21 @@ async def rank_results(
             f"    Abstract: {abstract_snippet}\n"
         )
 
-    resp = client.chat.completions.create(
-        model="gpt-4o-mini",
+    payload = get_structured_client().generate_structured(
+        model=settings.discovery_rank_model,
         temperature=0.1,
+        schema_name="discovery_rankings",
+        schema=RANKING_RESPONSE_JSON_SCHEMA,
         messages=[
             {
                 "role": "system",
                 "content": (
                     "You are a research paper relevance ranker. Given a research question "
                     "and a list of papers, score each paper's relevance from 0.0 to 1.0 "
-                    "and provide a brief reason. Output ONLY a JSON array of objects with "
-                    "fields: index (int), score (float 0-1), reason (string, 1-2 sentences). "
-                    "Sort by score descending. Only include the top papers."
+                    "and provide a brief reason. Return a JSON object with a single "
+                    '"rankings" field containing an array of objects with fields: index '
+                    "(int), score (float 0-1), reason (string, 1-2 sentences). Sort by "
+                    "score descending. Only include the top papers."
                 ),
             },
             {
@@ -89,26 +110,16 @@ async def rank_results(
                 "content": (
                     f"Research question: {question}\n\n"
                     f"Papers:{papers_text}\n\n"
-                    f"Rank these papers by relevance. Return the top {max_return} as JSON. "
-                    "Be selective — only score above 0.5 if the paper is clearly relevant."
+                    f"Rank these papers by relevance. Return the top {max_return} inside the "
+                    '"rankings" array. Be selective - only score above 0.5 if the paper is '
+                    "clearly relevant."
                 ),
             },
         ],
     )
 
-    text = resp.choices[0].message.content.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
-
-    rankings = json.loads(text)
-    if not isinstance(rankings, list):
-        raise ValueError("LLM did not return a JSON array")
-
     ranked = []
-    for rank_entry in rankings[:max_return]:
+    for rank_entry in payload.get("rankings", [])[:max_return]:
         idx = rank_entry.get("index", -1)
         if 0 <= idx < len(results):
             r = results[idx]

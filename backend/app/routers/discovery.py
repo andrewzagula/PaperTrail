@@ -1,11 +1,13 @@
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.llm import get_provider_error_response
 from app.models.models import DiscoveryResult, DiscoveryRun, User
+from app.services.paper_embeddings import sync_paper_embeddings
 
 router = APIRouter(prefix="/discover", tags=["discovery"])
 
@@ -14,7 +16,7 @@ DEFAULT_USER_EMAIL = "local@papertrail.dev"
 
 class DiscoverRequest(BaseModel):
     question: str
-    max_results: int = 10
+    max_results: int = Field(default=10, ge=1, le=20)
 
 
 class DiscoveryResultResponse(BaseModel):
@@ -134,7 +136,12 @@ async def _execute_discovery(run_id: uuid.UUID, question: str, max_results: int)
             db.commit()
         except Exception as e:
             run.status = "failed"
-            run.error_message = str(e)
+            mapped_error = get_provider_error_response(e)
+            if mapped_error:
+                _, detail = mapped_error
+                run.error_message = detail
+            else:
+                run.error_message = str(e)
             db.commit()
     finally:
         db.close()
@@ -233,7 +240,6 @@ async def ingest_discovery_result(
         }
 
     from app.services.arxiv_fetcher import download_arxiv_pdf, fetch_arxiv_metadata
-    from app.services.embedder import embed_and_store_sections
     from app.services.pdf_parser import extract_text
     from app.services.section_splitter import split_into_sections
     from app.models.models import Paper, PaperSection
@@ -285,9 +291,10 @@ async def ingest_discovery_result(
 
     num_chunks = 0
     try:
-        num_chunks = embed_and_store_sections(
-            paper_id=str(paper.id),
-            sections=section_records,
+        num_chunks = sync_paper_embeddings(
+            db,
+            paper.id,
+            section_records,
         )
     except Exception as e:
         print(f"Warning: embedding failed for paper {paper.id}: {e}")

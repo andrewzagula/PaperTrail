@@ -1,8 +1,5 @@
-import json
-
-from openai import OpenAI
-
 from app.config import settings
+from app.llm import get_structured_client
 
 BREAKDOWN_FIELDS = [
     "problem",
@@ -14,11 +11,18 @@ BREAKDOWN_FIELDS = [
 ]
 
 MAX_SECTION_CHARS = 80000
+BREAKDOWN_JSON_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        field: {"type": "string"}
+        for field in BREAKDOWN_FIELDS
+    },
+    "required": BREAKDOWN_FIELDS,
+}
 
 
 def analyze_paper(title: str, abstract: str, sections: list[dict]) -> dict:
-    client = OpenAI(api_key=settings.openai_api_key)
-
     paper_text = f"Title: {title}\n\nAbstract: {abstract}\n\n"
     char_budget = MAX_SECTION_CHARS - len(paper_text)
 
@@ -30,10 +34,11 @@ def analyze_paper(title: str, abstract: str, sections: list[dict]) -> dict:
         paper_text += section_text
         char_budget -= len(section_text)
 
-    resp = client.chat.completions.create(
-        model="gpt-4o-mini",
+    breakdown = get_structured_client().generate_structured(
+        model=settings.analysis_model,
         temperature=0.2,
-        response_format={"type": "json_object"},
+        schema_name="paper_breakdown",
+        schema=BREAKDOWN_JSON_SCHEMA,
         messages=[
             {
                 "role": "system",
@@ -58,9 +63,6 @@ def analyze_paper(title: str, abstract: str, sections: list[dict]) -> dict:
             },
         ],
     )
-
-    text = resp.choices[0].message.content.strip()
-    breakdown = json.loads(text)
 
     for field in BREAKDOWN_FIELDS:
         if field not in breakdown:

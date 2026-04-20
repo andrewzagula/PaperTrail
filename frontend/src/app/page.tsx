@@ -100,15 +100,20 @@ export default function Home() {
           {error && (
             <p className="text-red-500 text-sm mt-2 text-left">{error}</p>
           )}
-          <p className="text-sm text-[var(--muted)] mt-2 text-left">
-            or{" "}
+          <div className="mt-3 flex flex-wrap gap-3 text-sm">
             <a
               href="/papers/new"
-              className="text-[var(--primary)] hover:underline"
+              className="rounded-lg border border-[var(--border)] px-4 py-2 text-[var(--foreground)] transition-colors hover:border-[var(--primary)]/30 hover:text-[var(--primary)]"
             >
-              upload a paper directly
+              Upload Paper
             </a>
-          </p>
+            <a
+              href="/compare"
+              className="rounded-lg border border-[var(--primary)]/20 bg-[var(--primary)]/5 px-4 py-2 text-[var(--primary)] transition-colors hover:bg-[var(--primary)]/10"
+            >
+              Compare Library
+            </a>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">

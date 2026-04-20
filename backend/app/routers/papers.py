@@ -7,15 +7,22 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models.models import Paper, PaperSection, User
+from app.llm import get_provider_error_response
+from app.models.models import Chat, Paper, PaperSection, User
 from app.services.arxiv_fetcher import (
     download_arxiv_pdf,
     extract_arxiv_id,
     fetch_arxiv_metadata,
 )
-from app.services.embedder import embed_and_store_sections
+from app.services.paper_embeddings import (
+    EMBEDDING_STATUS_READY,
+    get_paper_embedding_status,
+    get_paper_embedding_status_map,
+    sync_paper_embeddings,
+)
 from app.services.pdf_parser import extract_metadata, extract_text
 from app.services.section_splitter import split_into_sections
+from app.services.vector_store import delete_by_paper
 
 router = APIRouter(prefix="/papers", tags=["papers"])
 
@@ -40,7 +47,17 @@ class SectionResponse(BaseModel):
         from_attributes = True
 
 
-class PaperResponse(BaseModel):
+class PaperEmbeddingMetadata(BaseModel):
+    embedding_status: str
+    embedding_provider: str
+    embedding_model: str
+    embedded_at: str | None
+
+    class Config:
+        from_attributes = True
+
+
+class PaperResponse(PaperEmbeddingMetadata):
     id: str
     title: str
     authors: str | None
@@ -54,13 +71,43 @@ class PaperResponse(BaseModel):
         from_attributes = True
 
 
-class PaperListItem(BaseModel):
+class PaperListItem(PaperEmbeddingMetadata):
     id: str
     title: str
     authors: str | None
     abstract: str | None
     arxiv_url: str | None
     created_at: str
+    has_structured_breakdown: bool
+
+    class Config:
+        from_attributes = True
+
+
+class ChatRequest(BaseModel):
+    message: str
+
+
+class ChatMessageResponse(BaseModel):
+    id: str
+    role: str
+    content: str
+    citations: list | None
+    created_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class ReembedRequest(BaseModel):
+    paper_ids: list[str] | None = None
+    force: bool = False
+
+
+class ReembedPaperResponse(PaperEmbeddingMetadata):
+    paper_id: str
+    title: str
+    num_chunks_embedded: int
 
     class Config:
         from_attributes = True
@@ -73,6 +120,59 @@ def _get_or_create_default_user(db: Session) -> User:
         db.commit()
         db.refresh(user)
     return user
+
+
+def _serialize_sections_for_embedding(sections: list[PaperSection]) -> list[dict]:
+    return [
+        {
+            "id": str(section.id),
+            "title": section.section_title,
+            "content": section.content,
+        }
+        for section in sections
+    ]
+
+
+def _get_paper_or_404(db: Session, paper_id: str) -> Paper:
+    try:
+        pid = uuid.UUID(paper_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid paper ID")
+
+    paper = db.query(Paper).filter(Paper.id == pid).first()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    return paper
+
+
+def _build_reembed_response(
+    db: Session,
+    paper: Paper,
+    num_chunks_embedded: int,
+) -> ReembedPaperResponse:
+    embedding_status = get_paper_embedding_status(db, paper.id)
+    return ReembedPaperResponse(
+        paper_id=str(paper.id),
+        title=paper.title,
+        num_chunks_embedded=num_chunks_embedded,
+        **embedding_status.to_response_fields(),
+    )
+
+
+def _reembed_paper(db: Session, paper: Paper) -> ReembedPaperResponse:
+    sections = (
+        db.query(PaperSection)
+        .filter(PaperSection.paper_id == paper.id)
+        .order_by(PaperSection.section_order)
+        .all()
+    )
+    num_chunks_embedded = sync_paper_embeddings(
+        db,
+        paper.id,
+        _serialize_sections_for_embedding(sections),
+        replace_active_embeddings=True,
+    )
+    return _build_reembed_response(db, paper, num_chunks_embedded)
 
 
 def _store_paper(
@@ -119,9 +219,10 @@ def _store_paper(
 
     num_chunks = 0
     try:
-        num_chunks = embed_and_store_sections(
-            paper_id=str(paper.id),
-            sections=section_records,
+        num_chunks = sync_paper_embeddings(
+            db,
+            paper.id,
+            section_records,
         )
     except Exception as e:
         print(f"Warning: embedding failed for paper {paper.id}: {e}")
@@ -217,6 +318,65 @@ async def ingest_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)
     }
 
 
+@router.post("/reembed")
+def bulk_reembed_papers(req: ReembedRequest, db: Session = Depends(get_db)):
+    user = _get_or_create_default_user(db)
+    paper_query = (
+        db.query(Paper)
+        .filter(Paper.user_id == user.id)
+        .order_by(Paper.created_at.desc())
+    )
+
+    if req.paper_ids is not None:
+        try:
+            requested_ids = [uuid.UUID(paper_id) for paper_id in req.paper_ids]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid paper ID")
+
+        papers = paper_query.filter(Paper.id.in_(requested_ids)).all()
+        found_ids = {paper.id for paper in papers}
+        missing_ids = [
+            str(requested_id)
+            for requested_id in requested_ids
+            if requested_id not in found_ids
+        ]
+        if missing_ids:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Paper not found: {missing_ids[0]}",
+            )
+    else:
+        papers = paper_query.all()
+
+    status_map = get_paper_embedding_status_map(db, [paper.id for paper in papers])
+    target_papers: list[Paper] = []
+    skipped_count = 0
+    for paper in papers:
+        paper_status = status_map[str(paper.id)]
+        if not req.force and paper_status.status == EMBEDDING_STATUS_READY:
+            skipped_count += 1
+            continue
+        target_papers.append(paper)
+
+    results: list[ReembedPaperResponse] = []
+    for paper in target_papers:
+        try:
+            results.append(_reembed_paper(db, paper))
+        except Exception as error:
+            mapped_error = get_provider_error_response(error)
+            if mapped_error:
+                status_code, detail = mapped_error
+                raise HTTPException(status_code=status_code, detail=detail) from error
+            raise
+
+    return {
+        "requested_count": len(papers),
+        "reembedded_count": len(results),
+        "skipped_count": skipped_count,
+        "results": [result.model_dump() for result in results],
+    }
+
+
 @router.get("/", response_model=list[PaperListItem])
 def list_papers(db: Session = Depends(get_db)):
     user = _get_or_create_default_user(db)
@@ -226,6 +386,7 @@ def list_papers(db: Session = Depends(get_db)):
         .order_by(Paper.created_at.desc())
         .all()
     )
+    status_map = get_paper_embedding_status_map(db, [paper.id for paper in papers])
     return [
         PaperListItem(
             id=str(p.id),
@@ -234,6 +395,8 @@ def list_papers(db: Session = Depends(get_db)):
             abstract=p.abstract,
             arxiv_url=p.arxiv_url,
             created_at=p.created_at.isoformat() if p.created_at else "",
+            has_structured_breakdown=bool(p.structured_breakdown),
+            **status_map[str(p.id)].to_response_fields(),
         )
         for p in papers
     ]
@@ -241,13 +404,7 @@ def list_papers(db: Session = Depends(get_db)):
 
 @router.get("/{paper_id}", response_model=PaperResponse)
 def get_paper(paper_id: str, db: Session = Depends(get_db)):
-    try:
-        pid = uuid.UUID(paper_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid paper ID")
-    paper = db.query(Paper).filter(Paper.id == pid).first()
-    if not paper:
-        raise HTTPException(status_code=404, detail="Paper not found")
+    paper = _get_paper_or_404(db, paper_id)
 
     sections = (
         db.query(PaperSection)
@@ -255,6 +412,7 @@ def get_paper(paper_id: str, db: Session = Depends(get_db)):
         .order_by(PaperSection.section_order)
         .all()
     )
+    embedding_status = get_paper_embedding_status(db, paper.id)
 
     return PaperResponse(
         id=str(paper.id),
@@ -264,6 +422,7 @@ def get_paper(paper_id: str, db: Session = Depends(get_db)):
         arxiv_url=paper.arxiv_url,
         created_at=paper.created_at.isoformat() if paper.created_at else "",
         structured_breakdown=paper.structured_breakdown,
+        **embedding_status.to_response_fields(),
         sections=[
             SectionResponse(
                 id=str(s.id),
@@ -277,17 +436,23 @@ def get_paper(paper_id: str, db: Session = Depends(get_db)):
     )
 
 
+@router.post("/{paper_id}/reembed", response_model=ReembedPaperResponse)
+def reembed_paper_endpoint(paper_id: str, db: Session = Depends(get_db)):
+    paper = _get_paper_or_404(db, paper_id)
+
+    try:
+        return _reembed_paper(db, paper)
+    except Exception as error:
+        mapped_error = get_provider_error_response(error)
+        if mapped_error:
+            status_code, detail = mapped_error
+            raise HTTPException(status_code=status_code, detail=detail) from error
+        raise
+
+
 @router.delete("/{paper_id}")
 def delete_paper(paper_id: str, db: Session = Depends(get_db)):
-    try:
-        pid = uuid.UUID(paper_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid paper ID")
-    paper = db.query(Paper).filter(Paper.id == pid).first()
-    if not paper:
-        raise HTTPException(status_code=404, detail="Paper not found")
-
-    from app.services.vector_store import delete_by_paper
+    paper = _get_paper_or_404(db, paper_id)
     delete_by_paper(paper_id)
 
     db.delete(paper)
@@ -323,13 +488,139 @@ def analyze_paper_endpoint(paper_id: str, db: Session = Depends(get_db)):
     ]
 
     from app.services.analyzer import analyze_paper
-    breakdown = analyze_paper(
-        title=paper.title,
-        abstract=paper.abstract or "",
-        sections=sections_data,
-    )
+    try:
+        breakdown = analyze_paper(
+            title=paper.title,
+            abstract=paper.abstract or "",
+            sections=sections_data,
+        )
+    except Exception as error:
+        mapped_error = get_provider_error_response(error)
+        if mapped_error:
+            status_code, detail = mapped_error
+            raise HTTPException(status_code=status_code, detail=detail) from error
+        raise
 
     paper.structured_breakdown = breakdown
     db.commit()
 
     return breakdown
+
+
+@router.get("/{paper_id}/chats", response_model=list[ChatMessageResponse])
+def get_chat_history(paper_id: str, db: Session = Depends(get_db)):
+    try:
+        pid = uuid.UUID(paper_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid paper ID")
+
+    paper = db.query(Paper).filter(Paper.id == pid).first()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    chats = (
+        db.query(Chat)
+        .filter(Chat.paper_id == pid)
+        .order_by(Chat.created_at)
+        .all()
+    )
+
+    return [
+        ChatMessageResponse(
+            id=str(c.id),
+            role=c.role,
+            content=c.content,
+            citations=c.citations,
+            created_at=c.created_at.isoformat() if c.created_at else "",
+        )
+        for c in chats
+    ]
+
+
+@router.post("/{paper_id}/chat", response_model=ChatMessageResponse)
+def chat_with_paper(paper_id: str, req: ChatRequest, db: Session = Depends(get_db)):
+    try:
+        pid = uuid.UUID(paper_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid paper ID")
+
+    paper = db.query(Paper).filter(Paper.id == pid).first()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    user = _get_or_create_default_user(db)
+
+    user_msg = Chat(
+        user_id=user.id,
+        paper_id=pid,
+        role="user",
+        content=req.message,
+    )
+    db.add(user_msg)
+    db.flush()
+
+    history = (
+        db.query(Chat)
+        .filter(Chat.paper_id == pid)
+        .order_by(Chat.created_at)
+        .all()
+    )
+    history_dicts = [
+        {"role": c.role, "content": c.content}
+        for c in history
+        if c.id != user_msg.id
+    ]
+
+    from app.services.chat_rag import generate_chat_response
+    embedding_status = get_paper_embedding_status(db, paper.id)
+
+    try:
+        result = generate_chat_response(
+            paper_id=paper_id,
+            paper_title=paper.title,
+            query=req.message,
+            history=history_dicts,
+            embedding_status=embedding_status.status,
+        )
+    except Exception as error:
+        mapped_error = get_provider_error_response(error)
+        if mapped_error:
+            status_code, detail = mapped_error
+            raise HTTPException(status_code=status_code, detail=detail) from error
+        raise
+
+    assistant_msg = Chat(
+        user_id=user.id,
+        paper_id=pid,
+        role="assistant",
+        content=result["answer"],
+        citations=result["citations"],
+    )
+    db.add(assistant_msg)
+    db.commit()
+    db.refresh(assistant_msg)
+
+    return ChatMessageResponse(
+        id=str(assistant_msg.id),
+        role="assistant",
+        content=result["answer"],
+        citations=result["citations"],
+        created_at=assistant_msg.created_at.isoformat() if assistant_msg.created_at else "",
+    )
+
+
+@router.delete("/{paper_id}/chats")
+def clear_chat_history(paper_id: str, db: Session = Depends(get_db)):
+    try:
+        pid = uuid.UUID(paper_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid paper ID")
+
+    paper = db.query(Paper).filter(Paper.id == pid).first()
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    db.query(Chat).filter(Chat.paper_id == pid).delete()
+    db.commit()
+
+    return {"status": "cleared", "paper_id": paper_id}

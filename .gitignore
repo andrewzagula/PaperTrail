@@ -31,8 +31,7 @@ data/
 **/2026-*.txt
 
 # Dev-only files (not shipped to open source consumers)
-AGENTS.md
-CLAUDE.md
+TEST_SUITE_ROBUSTNESS_PLAN.md
 PAPERTRAIL.md
 .claude/
 

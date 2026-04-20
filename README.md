@@ -4,7 +4,7 @@ PaperTrail is a self-hosted AI research assistant for arXiv. You start with a re
 
 This project is designed as a bounded research tool, not an autonomous web agent. It helps you search and reason over papers while keeping you in control of what gets ingested, compared, saved, and acted on.
 
-> No accounts. No cloud. No Docker. Bring your own OpenAI API key and run everything locally.
+> No accounts. No cloud. No Docker. Bring your own supported provider key, or point PaperTrail at local runtimes, and run everything locally.
 
 ## Product Vision
 
@@ -64,7 +64,7 @@ The goal is trustworthy assistance, not autonomy theater.
 | Backend | Python, FastAPI |
 | Database | SQLite |
 | Vector Store | ChromaDB |
-| AI | OpenAI API |
+| AI | Provider abstraction over OpenAI, Anthropic, Gemini, OpenAI-compatible APIs, Ollama, and local sentence-transformers embeddings |
 | Discovery Source | arXiv API |
 
 Everything runs locally. There is no external database, hosted backend, or required container setup.
@@ -73,7 +73,15 @@ Everything runs locally. There is no external database, hosted backend, or requi
 
 - Python 3.11+
 - Node.js 18+
-- An [OpenAI API key](https://platform.openai.com)
+- One supported chat / structured-output provider:
+  - [OpenAI](https://platform.openai.com)
+  - Anthropic
+  - Gemini
+  - an OpenAI-compatible API endpoint
+  - or a local Ollama runtime
+- One supported embedding backend:
+  - OpenAI embeddings
+  - or local sentence-transformers embeddings
 
 ## Quick Start
 
@@ -92,7 +100,7 @@ cd ..
 
 # Configure environment
 cp .env.example .env
-# Set OPENAI_API_KEY in .env
+# Set the provider key(s) or local runtime settings you plan to use in .env
 ```
 
 Start the backend:
@@ -109,6 +117,39 @@ npm run dev
 ```
 
 Then open `http://localhost:3000`.
+
+## Provider Configuration
+
+- `LLM_PROVIDER` selects the chat / structured-output backend: `openai`, `anthropic`, `gemini`, `openai_compatible`, or `ollama`.
+- `EMBEDDING_PROVIDER` selects the retrieval embedding backend: `openai` or `sentence_transformers`.
+- Configure only the provider credentials and local runtime settings that match the backends you selected.
+- `DISCOVERY_QUERY_MODEL`, `DISCOVERY_RANK_MODEL`, `ANALYSIS_MODEL`, `CHAT_MODEL`, `COMPARE_PROFILE_MODEL`, and `COMPARE_SYNTHESIS_MODEL` let you override models per workflow without changing product code.
+- `OPENAI_BASE_URL` and `OPENAI_COMPATIBLE_BASE_URL` are optional transport overrides for OpenAI-native and OpenAI-compatible endpoints.
+
+## Switching Embedding Backends
+
+- Chroma collections are namespaced by embedding provider and model, so switching `EMBEDDING_PROVIDER` or `EMBEDDING_MODEL` does not mix vector spaces.
+- Existing papers are not auto-re-embedded into the new collection. Paper metadata now reports the active-backend embedding status as `ready`, `stale`, `missing`, or `failed`.
+- Re-embed one paper with `POST /papers/{paper_id}/reembed`.
+- Re-embed all papers that are not `ready` for the active embedding backend with `POST /papers/reembed`.
+- Re-embedding uses stored paper sections. It does not re-download or re-parse PDFs.
+
+## Running Provider Smoke Tests
+
+- The default backend suite is deterministic and runs without live provider credentials.
+- Opt-in live smoke coverage is available for OpenAI, Anthropic, Gemini, and OpenAI-compatible hosted providers.
+- Conditional non-gating smoke checks are also available for Ollama chat / structured-output fallback and local sentence-transformers embeddings.
+- Run only the live smoke matrix with:
+
+```bash
+pytest backend/tests/test_llm_live_smoke.py -q
+```
+
+- Run the full backend suite with:
+
+```bash
+pytest backend/tests -q
+```
 
 ## Project Layout
 
@@ -143,16 +184,24 @@ Delete `data/` if you want a full local reset.
 
 ## Troubleshooting
 
-**Backend will not start**  
-Install backend dependencies and make sure `OPENAI_API_KEY` is set in `.env`.
+**Backend will not start**
 
-**Frontend cannot reach the backend**  
+Install backend dependencies and make sure the provider settings selected by `LLM_PROVIDER` and `EMBEDDING_PROVIDER` are configured in `.env`.
+
+**Frontend cannot reach the backend**
+
 The backend should be running on `http://localhost:8000`. If you changed ports, update the frontend API configuration and CORS settings.
 
-**Embeddings fail but papers still save**  
+**Embeddings fail but papers still save**
+
 This is expected behavior. PaperTrail is designed to preserve the paper even if embedding generation fails.
 
-**Discovery quality is poor**  
+**Retrieval seems empty after changing embedding settings**
+
+Embedding provider/model changes write to a new namespaced Chroma collection. Existing papers are not auto-re-embedded into the new collection, so use the re-embed endpoints after switching embedding backends.
+
+**Discovery quality is poor**
+
 arXiv search is keyword-based. More specific technical phrasing usually produces better results.
 
 ## License

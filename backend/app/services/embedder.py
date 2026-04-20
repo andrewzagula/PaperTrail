@@ -1,9 +1,6 @@
-from openai import OpenAI
-
-from app.config import settings
+from app.llm import get_embedding_client
 from app.services.vector_store import add_embeddings
 
-EMBEDDING_MODEL = "text-embedding-3-small"
 CHUNK_SIZE = 500
 CHUNK_CHAR_SIZE = CHUNK_SIZE * 4
 CHUNK_OVERLAP = 200
@@ -38,12 +35,11 @@ def chunk_text(text: str, chunk_size: int = CHUNK_CHAR_SIZE, overlap: int = CHUN
 
 
 def generate_embeddings(texts: list[str]) -> list[list[float]]:
-    client = OpenAI(api_key=settings.openai_api_key)
-    response = client.embeddings.create(
-        model=EMBEDDING_MODEL,
-        input=texts,
-    )
-    return [item.embedding for item in response.data]
+    return get_embedding_client().embed_texts(texts)
+
+
+def generate_query_embedding(text: str) -> list[float]:
+    return get_embedding_client().embed_query(text)
 
 
 def embed_and_store_sections(

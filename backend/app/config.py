@@ -9,6 +9,24 @@ DATA_DIR.mkdir(exist_ok=True)
 
 class Settings(BaseSettings):
     openai_api_key: str = ""
+    openai_base_url: str = ""
+    openai_compatible_api_key: str = ""
+    openai_compatible_base_url: str = ""
+    anthropic_api_key: str = ""
+    google_api_key: str = ""
+    ollama_base_url: str = "http://localhost:11434"
+    local_embedding_device: str = ""
+
+    llm_provider: str = "openai"
+    llm_model: str = "gpt-4o-mini"
+    embedding_provider: str = "openai"
+    embedding_model: str = "text-embedding-3-small"
+    discovery_query_model: str = "gpt-4o-mini"
+    discovery_rank_model: str = "gpt-4o-mini"
+    analysis_model: str = "gpt-4o-mini"
+    chat_model: str = "gpt-4o-mini"
+    compare_profile_model: str = "gpt-4o-mini"
+    compare_synthesis_model: str = "gpt-4o"
 
     data_dir: Path = DATA_DIR
     database_path: Path = DATA_DIR / "papertrail.db"

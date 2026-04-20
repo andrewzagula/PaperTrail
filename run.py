@@ -10,7 +10,7 @@ def main():
     if not env_file.exists():
         print("ERROR: No .env file found.")
         print("Run: cp .env.example .env")
-        print("Then set your OPENAI_API_KEY in the .env file.")
+        print("Then configure the provider API keys you plan to use in the .env file.")
         sys.exit(1)
 
     print("Starting Papertrail API on http://localhost:8000")
