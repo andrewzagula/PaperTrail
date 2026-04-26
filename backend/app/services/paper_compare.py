@@ -8,6 +8,11 @@ from app.config import settings
 from app.llm import get_structured_client
 from app.models.models import Paper, PaperSection
 from app.services.analyzer import analyze_paper
+from app.workflows.compare_graph import (
+    CompareGraphNodes,
+    CompareGraphState,
+    build_compare_graph,
+)
 
 NOT_EXPLICITLY_DISCUSSED = "Not explicitly discussed in the paper."
 NOT_EXPLICITLY_DISCUSSED_ACROSS_PAPERS = (
@@ -132,21 +137,63 @@ COMPARE_SYNTHESIS_JSON_SCHEMA = {
 
 def compare_papers(db: Session, user_id: uuid.UUID, paper_ids: list[str]) -> dict:
     normalized_ids = validate_compare_paper_ids(paper_ids)
-    papers = load_papers_for_user(db, user_id, normalized_ids)
+    graph = build_compare_graph(
+        CompareGraphNodes(
+            load_papers=_compare_graph_load_papers,
+            ensure_breakdowns=_compare_graph_ensure_breakdowns,
+            normalize_profiles=_compare_graph_normalize_profiles,
+            synthesize_narrative=_compare_graph_synthesize_narrative,
+            build_response=_compare_graph_build_response,
+        )
+    )
+    result = graph.invoke({
+        "db": db,
+        "user_id": user_id,
+        "paper_ids": normalized_ids,
+    })
 
+    return {
+        "selected_papers": result["selected_papers"],
+        "normalized_profiles": result["normalized_profiles"],
+        "comparison_table": result["comparison_table"],
+        "narrative_summary": result["narrative_summary"],
+        "warnings": result["warnings"],
+    }
+
+
+def _compare_graph_load_papers(state: CompareGraphState) -> CompareGraphState:
+    return {
+        "papers": load_papers_for_user(
+            state["db"],
+            state["user_id"],
+            state["paper_ids"],
+        )
+    }
+
+
+def _compare_graph_ensure_breakdowns(state: CompareGraphState) -> CompareGraphState:
+    db = state["db"]
+    paper_contexts = []
+
+    for paper in state["papers"]:
+        sections = _load_sections_for_paper(db, paper.id)
+        breakdown, breakdown_warnings = ensure_structured_breakdown(db, paper, sections)
+        paper_contexts.append({
+            "paper": paper,
+            "sections": sections,
+            "breakdown": breakdown,
+            "breakdown_warnings": breakdown_warnings,
+        })
+
+    return {"paper_contexts": paper_contexts}
+
+
+def _compare_graph_normalize_profiles(state: CompareGraphState) -> CompareGraphState:
     selected_papers = []
     normalized_profiles = []
 
-    for paper in papers:
-        sections = _load_sections_for_paper(db, paper.id)
-        breakdown, breakdown_warnings = ensure_structured_breakdown(db, paper, sections)
-        profile = normalize_paper_for_compare(
-            paper=paper,
-            breakdown=breakdown,
-            sections=sections,
-            seed_warnings=breakdown_warnings,
-        )
-
+    for paper_context in state["paper_contexts"]:
+        paper = paper_context["paper"]
         selected_papers.append({
             "id": str(paper.id),
             "title": paper.title,
@@ -154,19 +201,37 @@ def compare_papers(db: Session, user_id: uuid.UUID, paper_ids: list[str]) -> dic
             "arxiv_url": paper.arxiv_url,
             "created_at": paper.created_at.isoformat() if paper.created_at else "",
         })
-        normalized_profiles.append(profile)
+        normalized_profiles.append(
+            normalize_paper_for_compare(
+                paper=paper,
+                breakdown=paper_context["breakdown"],
+                sections=paper_context["sections"],
+                seed_warnings=paper_context["breakdown_warnings"],
+            )
+        )
 
+    return {
+        "selected_papers": selected_papers,
+        "normalized_profiles": normalized_profiles,
+    }
+
+
+def _compare_graph_synthesize_narrative(state: CompareGraphState) -> CompareGraphState:
+    normalized_profiles = state["normalized_profiles"]
     narrative_summary, summary_warnings = build_comparison_narrative(normalized_profiles)
     warnings = _dedupe_strings(
         _collect_top_level_warnings(normalized_profiles) + summary_warnings
     )
 
     return {
-        "selected_papers": selected_papers,
-        "normalized_profiles": normalized_profiles,
-        "comparison_table": _build_comparison_table(normalized_profiles),
         "narrative_summary": narrative_summary,
         "warnings": warnings,
+    }
+
+
+def _compare_graph_build_response(state: CompareGraphState) -> CompareGraphState:
+    return {
+        "comparison_table": _build_comparison_table(state["normalized_profiles"]),
     }
 
 
