@@ -76,7 +76,7 @@ export default function Home() {
         </h1>
         <p className="text-xl text-[var(--muted)] leading-relaxed">
           Start with a research question. Discover, understand, compare, and
-          implement.
+          generate ideas.
         </p>
         <div className="pt-2">
           <div className="flex gap-3">
@@ -113,6 +113,12 @@ export default function Home() {
             >
               Compare Library
             </a>
+            <a
+              href="/ideas"
+              className="rounded-lg border border-[var(--primary)]/20 bg-[var(--primary)]/5 px-4 py-2 text-[var(--primary)] transition-colors hover:bg-[var(--primary)]/10"
+            >
+              Generate Ideas
+            </a>
           </div>
         </div>
 
@@ -131,8 +137,8 @@ export default function Home() {
               desc: "Side-by-side analysis of multiple papers",
             },
             {
-              title: "Implement",
-              desc: "Turn methods into runnable Python code",
+              title: "Ideas",
+              desc: "Generate grounded research directions from papers or topics",
             },
           ].map((item) => (
             <div

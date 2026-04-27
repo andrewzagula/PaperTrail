@@ -11,10 +11,20 @@ from app.workflows.compare_graph import (
     CompareGraphState,
     build_compare_graph,
 )
+from app.workflows.idea_graph import (
+    IdeaGraphNode,
+    IdeaGraphNodes,
+    IdeaGraphState,
+    build_idea_graph,
+)
 
 __all__ = [
     "CompareGraphNode",
     "CompareGraphNodes",
     "CompareGraphState",
+    "IdeaGraphNode",
+    "IdeaGraphNodes",
+    "IdeaGraphState",
     "build_compare_graph",
+    "build_idea_graph",
 ]

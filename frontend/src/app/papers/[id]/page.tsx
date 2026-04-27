@@ -150,6 +150,11 @@ export default function PaperView() {
     router.push(`/compare?paper=${paper.id}`);
   };
 
+  const handleGenerateIdeas = () => {
+    if (!paper) return;
+    router.push(`/ideas?paper=${encodeURIComponent(paper.id)}`);
+  };
+
   useEffect(() => {
     if (!chatOpen || chatHistoryLoaded) return;
     async function loadHistory() {
@@ -269,6 +274,12 @@ export default function PaperView() {
                 className="px-4 py-2 rounded-lg border border-[var(--primary)]/20 bg-[var(--primary)]/5 text-sm font-medium text-[var(--primary)] hover:bg-[var(--primary)]/10 transition-colors"
               >
                 Compare Papers
+              </button>
+              <button
+                onClick={handleGenerateIdeas}
+                className="px-4 py-2 rounded-lg border border-[var(--primary)]/20 bg-[var(--primary)]/5 text-sm font-medium text-[var(--primary)] hover:bg-[var(--primary)]/10 transition-colors"
+              >
+                Generate Ideas
               </button>
               <button
                 onClick={() => setChatOpen(!chatOpen)}
