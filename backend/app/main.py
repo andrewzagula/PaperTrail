@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routers import compare, discovery, ideas, papers
+from app.routers import compare, discovery, ideas, implementations, papers
 
 
 @asynccontextmanager
@@ -33,6 +33,7 @@ app.add_middleware(
 app.include_router(papers.router)
 app.include_router(compare.router)
 app.include_router(ideas.router)
+app.include_router(implementations.router)
 app.include_router(discovery.router)
 
 

@@ -31,8 +31,12 @@ class CompareGraphFoundationTests(unittest.TestCase):
                 "IdeaGraphNode",
                 "IdeaGraphNodes",
                 "IdeaGraphState",
+                "ImplementationGraphNode",
+                "ImplementationGraphNodes",
+                "ImplementationGraphState",
                 "build_compare_graph",
                 "build_idea_graph",
+                "build_implementation_graph",
             ],
         )
 

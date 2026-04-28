@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     compare_synthesis_model: str = "gpt-4o"
     idea_generation_model: str = "gpt-4o-mini"
     idea_critique_model: str = "gpt-4o-mini"
+    implementation_extraction_model: str = "gpt-4o-mini"
+    implementation_code_model: str = "gpt-4o-mini"
+    implementation_review_model: str = "gpt-4o-mini"
 
     data_dir: Path = DATA_DIR
     database_path: Path = DATA_DIR / "papertrail.db"

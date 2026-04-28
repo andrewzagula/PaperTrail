@@ -123,7 +123,7 @@ Then open `http://localhost:3000`.
 - `LLM_PROVIDER` selects the chat / structured-output backend: `openai`, `anthropic`, `gemini`, `openai_compatible`, or `ollama`.
 - `EMBEDDING_PROVIDER` selects the retrieval embedding backend: `openai` or `sentence_transformers`.
 - Configure only the provider credentials and local runtime settings that match the backends you selected.
-- `DISCOVERY_QUERY_MODEL`, `DISCOVERY_RANK_MODEL`, `ANALYSIS_MODEL`, `CHAT_MODEL`, `COMPARE_PROFILE_MODEL`, and `COMPARE_SYNTHESIS_MODEL` let you override models per workflow without changing product code.
+- `DISCOVERY_QUERY_MODEL`, `DISCOVERY_RANK_MODEL`, `ANALYSIS_MODEL`, `CHAT_MODEL`, `COMPARE_PROFILE_MODEL`, `COMPARE_SYNTHESIS_MODEL`, `IDEA_GENERATION_MODEL`, `IDEA_CRITIQUE_MODEL`, `IMPLEMENTATION_EXTRACTION_MODEL`, `IMPLEMENTATION_CODE_MODEL`, and `IMPLEMENTATION_REVIEW_MODEL` let you override models per workflow without changing product code.
 - `OPENAI_BASE_URL` and `OPENAI_COMPATIBLE_BASE_URL` are optional transport overrides for OpenAI-native and OpenAI-compatible endpoints.
 
 ## Switching Embedding Backends
