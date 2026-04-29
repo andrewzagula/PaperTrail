@@ -102,6 +102,12 @@ export default function Home() {
           )}
           <div className="mt-3 flex flex-wrap gap-3 text-sm">
             <a
+              href="/dashboard"
+              className="rounded-lg border border-[var(--primary)]/20 bg-[var(--primary)]/5 px-4 py-2 text-[var(--primary)] transition-colors hover:bg-[var(--primary)]/10"
+            >
+              Workspace
+            </a>
+            <a
               href="/papers/new"
               className="rounded-lg border border-[var(--border)] px-4 py-2 text-[var(--foreground)] transition-colors hover:border-[var(--primary)]/30 hover:text-[var(--primary)]"
             >

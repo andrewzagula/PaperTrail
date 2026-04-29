@@ -1,106 +1,98 @@
 # PaperTrail
 
-PaperTrail is a self-hosted AI research assistant for arXiv. You start with a research question, PaperTrail turns that into targeted arXiv searches, ranks the results, helps you ingest the best papers, and then guides the rest of the workflow: understanding, grounded Q&A, comparison, idea generation, and implementation planning.
+PaperTrail is a self-hosted research workspace for finding, reading, comparing, and extending arXiv papers with help from an LLM provider you choose.
 
-This project is designed as a bounded research tool, not an autonomous web agent. It helps you search and reason over papers while keeping you in control of what gets ingested, compared, saved, and acted on.
+It is built for a single local user. There are no hosted accounts, no required cloud database, and no required Docker setup. Runtime state lives on your machine in SQLite, local PDF files, and a local ChromaDB vector store.
 
-> No accounts. No cloud. No Docker. Bring your own supported provider key, or point PaperTrail at local runtimes, and run everything locally.
+> Project status: pre-1.0. The core local workflows are implemented, but the app is still evolving and should be treated as an experimental research tool.
 
-## Product Vision
+## What PaperTrail Does
 
-The intended finished PaperTrail experience looks like this:
+- Starts from a plain-language research question.
+- Generates targeted arXiv search queries.
+- Searches arXiv, deduplicates results, and ranks papers by relevance.
+- Ingests papers from arXiv links, discovery results, or uploaded PDFs.
+- Extracts PDF text and sections for browsing, analysis, and retrieval.
+- Produces structured paper breakdowns covering problem, method, results, limitations, contributions, and future work.
+- Supports grounded chat over an ingested paper using section retrieval.
+- Compares multiple saved papers with normalized profiles, a comparison table, warnings, and a narrative summary.
+- Generates follow-on research ideas from papers or a topic.
+- Turns a paper into an implementation-oriented plan with algorithm steps, pseudocode, assumptions, setup notes, tests, and starter code.
+- Saves comparisons, ideas, and implementation plans into a local workspace.
 
-1. Ask a research question in plain language.
-2. PaperTrail generates a small set of targeted arXiv queries.
-3. It searches arXiv, deduplicates results, and ranks papers with relevance scores and explanations.
-4. You ingest the papers that matter, or skip discovery and add an arXiv link or PDF directly.
-5. Each paper gets a structured breakdown: problem, method, contributions, results, limitations, and future work.
-6. You ask grounded questions about a paper and get section-aware answers with citations back to the source text.
-7. You compare multiple papers side by side across methods, datasets, strengths, weaknesses, and takeaways.
-8. You generate follow-on research ideas by combining, extending, ablating, or applying what the papers describe.
-9. You turn a paper into an implementation plan with algorithm steps, pseudocode, missing assumptions, and starter code.
-10. Everything you care about stays in a local workspace: papers, discovery runs, saved comparisons, and saved ideas.
+## What It Is Not
 
-## Core Capabilities
+PaperTrail is intentionally bounded:
 
-- **Question-first discovery**: start from a research goal, not a paper URL.
-- **arXiv-native search**: generate focused keyword queries, search arXiv, and rank the shortlist.
-- **Direct paper ingestion**: add papers from an arXiv link or upload a PDF.
-- **Structured understanding**: convert long papers into a consistent analysis you can scan quickly.
-- **Grounded chat**: ask questions about a paper and get answers tied to specific sections.
-- **Multi-paper comparison**: compare 2 to 5 papers in a structured matrix plus narrative summary.
-- **Idea generation**: create concrete research directions from one paper or a small set of papers.
-- **Paper-to-code support**: extract algorithms, identify missing details, and generate starter implementations.
-- **Local workspace**: keep your research state on your machine with no hosted dependency.
+- It searches arXiv only.
+- It does not browse the open web.
+- It does not autonomously follow citation chains.
+- It does not run open-ended multi-step research loops without user action.
+- It does not provide multi-user auth, hosted sync, or collaboration features.
+- It is not a replacement for reading the source paper.
 
-## How It Is Intended to Feel
-
-PaperTrail is meant to feel like a focused research workspace rather than a generic chatbot:
-
-- The home screen centers on a research question and recent discovery runs.
-- Discovery results show ranked paper cards, generated queries, relevance explanations, and one-click ingestion.
-- Each paper page combines abstract, structured breakdown, full section view, grounded chat, and implementation tools.
-- Comparison and idea-generation views are separate workflows, not buried in a single chat thread.
-- A dashboard gives you one place to return to saved papers, comparisons, ideas, and prior discovery work.
-
-## Boundaries
-
-PaperTrail is intentionally constrained:
-
-- It searches **arXiv only**.
-- It does **not** browse the open web.
-- It does **not** follow citation chains autonomously.
-- It does **not** run open-ended multi-step research loops without approval.
-- Search budgets are explicit and capped.
-- The product is designed for **single-user, self-hosted** use.
-
-The goal is trustworthy assistance, not autonomy theater.
+The goal is a focused local research assistant, not an autonomous research agent.
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
+| Area | Technology |
+| --- | --- |
 | Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS v4 |
-| Backend | Python, FastAPI |
+| Backend | Python 3.11+, FastAPI, SQLAlchemy |
 | Database | SQLite |
-| Vector Store | ChromaDB |
-| AI | Provider abstraction over OpenAI, Anthropic, Gemini, OpenAI-compatible APIs, Ollama, and local sentence-transformers embeddings |
-| Discovery Source | arXiv API |
-
-Everything runs locally. There is no external database, hosted backend, or required container setup.
+| Vector store | ChromaDB |
+| PDF parsing | PyMuPDF |
+| LLM orchestration | Provider abstraction over OpenAI, Anthropic, Gemini, OpenAI-compatible APIs, and Ollama |
+| Embeddings | OpenAI embeddings or local sentence-transformers |
+| Paper source | arXiv API |
 
 ## Requirements
 
 - Python 3.11+
 - Node.js 18+
-- One supported chat / structured-output provider:
-  - [OpenAI](https://platform.openai.com)
+- One supported chat and structured-output provider:
+  - OpenAI
   - Anthropic
   - Gemini
-  - an OpenAI-compatible API endpoint
-  - or a local Ollama runtime
-- One supported embedding backend:
+  - OpenAI-compatible API endpoint
+  - Ollama
+- One supported embedding provider:
   - OpenAI embeddings
-  - or local sentence-transformers embeddings
+  - sentence-transformers running locally
+
+Hosted LLM providers receive the prompts and paper excerpts required for the workflow you run. Use Ollama and local sentence-transformers if you need a fully local model path.
 
 ## Quick Start
 
 ```bash
-# Clone the repo
 git clone https://github.com/andrewzagula/PaperTrail.git
 cd PaperTrail
+```
 
-# Backend
+Create and configure the backend environment:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -r backend/requirements.txt
 
-# Frontend
+cp .env.example .env
+```
+
+Edit `.env` for the provider you want to use. For the default OpenAI setup, set:
+
+```bash
+LLM_PROVIDER=openai
+EMBEDDING_PROVIDER=openai
+OPENAI_API_KEY=sk-your-key
+```
+
+Install frontend dependencies:
+
+```bash
 cd frontend
 npm install
 cd ..
-
-# Configure environment
-cp .env.example .env
-# Set the provider key(s) or local runtime settings you plan to use in .env
 ```
 
 Start the backend:
@@ -109,101 +101,206 @@ Start the backend:
 python run.py
 ```
 
-Start the frontend in a second terminal:
+Start the frontend in another terminal:
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-Then open `http://localhost:3000`.
+Open `http://localhost:3000`.
 
-## Provider Configuration
+The API will be available at `http://localhost:8000`, with FastAPI docs at `http://localhost:8000/docs`.
 
-- `LLM_PROVIDER` selects the chat / structured-output backend: `openai`, `anthropic`, `gemini`, `openai_compatible`, or `ollama`.
-- `EMBEDDING_PROVIDER` selects the retrieval embedding backend: `openai` or `sentence_transformers`.
-- Configure only the provider credentials and local runtime settings that match the backends you selected.
-- `DISCOVERY_QUERY_MODEL`, `DISCOVERY_RANK_MODEL`, `ANALYSIS_MODEL`, `CHAT_MODEL`, `COMPARE_PROFILE_MODEL`, `COMPARE_SYNTHESIS_MODEL`, `IDEA_GENERATION_MODEL`, `IDEA_CRITIQUE_MODEL`, `IMPLEMENTATION_EXTRACTION_MODEL`, `IMPLEMENTATION_CODE_MODEL`, and `IMPLEMENTATION_REVIEW_MODEL` let you override models per workflow without changing product code.
-- `OPENAI_BASE_URL` and `OPENAI_COMPATIBLE_BASE_URL` are optional transport overrides for OpenAI-native and OpenAI-compatible endpoints.
+## Configuration
 
-## Switching Embedding Backends
+PaperTrail reads backend configuration from `.env` in the repository root. Start from `.env.example`.
 
-- Chroma collections are namespaced by embedding provider and model, so switching `EMBEDDING_PROVIDER` or `EMBEDDING_MODEL` does not mix vector spaces.
-- Existing papers are not auto-re-embedded into the new collection. Paper metadata now reports the active-backend embedding status as `ready`, `stale`, `missing`, or `failed`.
-- Re-embed one paper with `POST /papers/{paper_id}/reembed`.
-- Re-embed all papers that are not `ready` for the active embedding backend with `POST /papers/reembed`.
-- Re-embedding uses stored paper sections. It does not re-download or re-parse PDFs.
+### Provider Selection
 
-## Running Provider Smoke Tests
+| Variable | Purpose |
+| --- | --- |
+| `LLM_PROVIDER` | Chat and structured-output provider: `openai`, `anthropic`, `gemini`, `openai_compatible`, or `ollama` |
+| `LLM_MODEL` | Default chat model for the selected provider |
+| `EMBEDDING_PROVIDER` | Embedding provider: `openai` or `sentence_transformers` |
+| `EMBEDDING_MODEL` | Embedding model for the selected embedding provider |
 
-- The default backend suite is deterministic and runs without live provider credentials.
-- Opt-in live smoke coverage is available for OpenAI, Anthropic, Gemini, and OpenAI-compatible hosted providers.
-- Conditional non-gating smoke checks are also available for Ollama chat / structured-output fallback and local sentence-transformers embeddings.
-- Run only the live smoke matrix with:
+### Provider Credentials
+
+| Provider | Required variables |
+| --- | --- |
+| OpenAI | `OPENAI_API_KEY` |
+| Anthropic | `ANTHROPIC_API_KEY` |
+| Gemini | `GOOGLE_API_KEY` |
+| OpenAI-compatible | `OPENAI_COMPATIBLE_API_KEY`, `OPENAI_COMPATIBLE_BASE_URL` |
+| Ollama | `OLLAMA_BASE_URL` |
+| Local embeddings | `LOCAL_EMBEDDING_DEVICE` is optional |
+
+`OPENAI_BASE_URL` is optional for OpenAI-native compatible transport overrides.
+
+### Per-Workflow Models
+
+These variables let you tune cost, speed, or quality without changing code:
+
+- `DISCOVERY_QUERY_MODEL`
+- `DISCOVERY_RANK_MODEL`
+- `ANALYSIS_MODEL`
+- `CHAT_MODEL`
+- `COMPARE_PROFILE_MODEL`
+- `COMPARE_SYNTHESIS_MODEL`
+- `IDEA_GENERATION_MODEL`
+- `IDEA_CRITIQUE_MODEL`
+- `IMPLEMENTATION_EXTRACTION_MODEL`
+- `IMPLEMENTATION_CODE_MODEL`
+- `IMPLEMENTATION_REVIEW_MODEL`
+
+The frontend uses `NEXT_PUBLIC_API_URL` when set. Otherwise it defaults to `http://localhost:8000`.
+
+## Embeddings
+
+PaperTrail stores retrieval embeddings in ChromaDB collections namespaced by embedding provider and model. Switching `EMBEDDING_PROVIDER` or `EMBEDDING_MODEL` does not mix vector spaces.
+
+Existing papers are not automatically re-embedded after an embedding backend change. Paper responses include the active-backend embedding status:
+
+- `ready`
+- `stale`
+- `missing`
+- `failed`
+
+Rebuild embeddings with:
 
 ```bash
-pytest backend/tests/test_llm_live_smoke.py -q
+# One paper
+curl -X POST http://localhost:8000/papers/<paper_id>/reembed
+
+# All papers not ready for the active embedding backend
+curl -X POST http://localhost:8000/papers/reembed \
+  -H "Content-Type: application/json" \
+  -d '{"force": false}'
 ```
 
-- Run the full backend suite with:
+## Local Data
 
-```bash
-pytest backend/tests -q
-```
+Runtime data is created under `data/` and is ignored by Git.
+
+| Path | Purpose |
+| --- | --- |
+| `data/papertrail.db` | SQLite database |
+| `data/pdfs/` | Downloaded and uploaded PDFs |
+| `data/chroma/` | ChromaDB vector collections |
+
+Delete `data/` to reset your local workspace.
+
+## Main API Surface
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /health` | Backend health check |
+| `POST /discover/` | Start an arXiv discovery run |
+| `GET /discover/` | List discovery runs |
+| `GET /discover/{run_id}` | Fetch one discovery run and ranked results |
+| `POST /discover/{run_id}/ingest/{result_id}` | Ingest a discovery result |
+| `POST /papers/ingest/arxiv` | Ingest a paper from an arXiv URL or ID |
+| `POST /papers/ingest/pdf` | Upload and ingest a PDF |
+| `GET /papers/` | List ingested papers |
+| `GET /papers/{paper_id}` | Fetch paper metadata, sections, and analysis state |
+| `POST /papers/{paper_id}/analyze` | Generate a structured breakdown |
+| `POST /papers/{paper_id}/chat` | Ask a grounded question about one paper |
+| `POST /papers/compare` | Compare selected papers |
+| `POST /papers/ideas` | Generate research ideas |
+| `POST /papers/{paper_id}/implement` | Generate an implementation plan |
+| `GET /workspace/summary` | Fetch dashboard summary data |
+| `GET /workspace/saved-items` | List saved comparisons, ideas, and implementation plans |
+
+See `http://localhost:8000/docs` for the full generated OpenAPI reference.
 
 ## Project Layout
 
 ```text
 PaperTrail/
-├── backend/          # FastAPI app, services, models, routers
-├── frontend/         # Next.js app
-├── data/             # Local runtime state (auto-created, gitignored)
-├── run.py            # Backend entry point
-└── .env.example      # Environment template
+├── backend/
+│   ├── app/
+│   │   ├── llm/          # Provider abstraction and clients
+│   │   ├── models/       # SQLAlchemy models
+│   │   ├── routers/      # FastAPI routes
+│   │   ├── services/     # PDF, arXiv, RAG, comparison, ideas, implementation
+│   │   └── workflows/    # LangGraph-style workflow helpers
+│   ├── tests/
+│   └── requirements.txt
+├── frontend/
+│   ├── src/app/          # Next.js app routes
+│   ├── src/lib/
+│   └── package.json
+├── data/                 # Local runtime state, gitignored
+├── .env.example
+├── run.py                # Backend dev entry point
+└── README.md
 ```
 
-## Local Data Storage
+## Development
 
-PaperTrail stores its runtime state in `data/`:
+Run the backend directly:
 
-| Path | Purpose |
-|---|---|
-| `data/papertrail.db` | SQLite database for papers, sections, chats, discovery runs, and saved items |
-| `data/pdfs/` | Downloaded and uploaded PDFs |
-| `data/chroma/` | ChromaDB vector embeddings for retrieval |
+```bash
+source .venv/bin/activate
+python run.py
+```
 
-Delete `data/` if you want a full local reset.
+Run the frontend:
 
-## Operating Model
+```bash
+cd frontend
+npm run dev
+```
 
-- Papers and sections are stored in SQLite for relational access.
-- Section embeddings are stored in ChromaDB for retrieval.
-- Discovery uses the arXiv API plus LLM-generated queries and ranking.
-- Grounded chat retrieves only from the selected paper's sections.
-- All saved research artifacts remain local to your machine.
+Run backend tests:
 
-## Troubleshooting
+```bash
+pytest backend/tests -q
+```
 
-**Backend will not start**
+Run only live provider smoke tests:
 
-Install backend dependencies and make sure the provider settings selected by `LLM_PROVIDER` and `EMBEDDING_PROVIDER` are configured in `.env`.
+```bash
+pytest backend/tests/test_llm_live_smoke.py -q
+```
 
-**Frontend cannot reach the backend**
+Build the frontend:
 
-The backend should be running on `http://localhost:8000`. If you changed ports, update the frontend API configuration and CORS settings.
+```bash
+cd frontend
+npm run build
+```
 
-**Embeddings fail but papers still save**
+## Contributing
 
-This is expected behavior. PaperTrail is designed to preserve the paper even if embedding generation fails.
+Contributions are welcome. The most useful issues and pull requests are scoped to one workflow or one layer of the stack.
 
-**Retrieval seems empty after changing embedding settings**
+Good first areas:
 
-Embedding provider/model changes write to a new namespaced Chroma collection. Existing papers are not auto-re-embedded into the new collection, so use the re-embed endpoints after switching embedding backends.
+- Provider compatibility fixes
+- Retrieval and citation quality improvements
+- PDF parsing edge cases
+- Tests for discovery, comparison, ideas, and implementation workflows
+- Frontend usability and accessibility improvements
+- Documentation for local model setups
 
-**Discovery quality is poor**
+Before opening a pull request:
 
-arXiv search is keyword-based. More specific technical phrasing usually produces better results.
+1. Run `pytest backend/tests -q`.
+2. Run `cd frontend && npm run build`.
+3. Keep local data, generated PDFs, Chroma files, `.env`, and caches out of Git.
+4. Describe which provider and embedding backend you tested with.
+
+## Security and Privacy
+
+- Do not commit `.env`, provider keys, local PDFs, Chroma data, or SQLite data.
+- The default app has a single local user record and no authentication layer.
+- Hosted model providers receive paper text excerpts and prompts for workflows you run through that provider.
+- The project does not add its own telemetry.
+
+If you find a security issue, please avoid posting sensitive details publicly in an issue. Contact the maintainer privately if possible, or open a minimal issue requesting a security contact.
 
 ## License
 
-[MIT](LICENSE)
+PaperTrail is released under the [MIT License](LICENSE).
