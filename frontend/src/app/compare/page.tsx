@@ -9,6 +9,7 @@ import {
   mergeCompareSelection,
   setStoredCompareSelection,
 } from "@/lib/compare-selection";
+import { getApiErrorMessage } from "@/lib/api-errors";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -144,7 +145,9 @@ function ComparePageContent() {
       try {
         const res = await fetch(`${API_URL}/papers/`);
         if (!res.ok) {
-          throw new Error("Failed to load your paper library.");
+          throw new Error(
+            await getApiErrorMessage(res, "Failed to load your paper library."),
+          );
         }
 
         const data: PaperListItem[] = await res.json();
@@ -213,6 +216,10 @@ function ComparePageContent() {
   }
 
   const handleTogglePaper = (paperId: string) => {
+    if (compareLoading) {
+      return;
+    }
+
     let nextMessage = "";
 
     setSelectedIds((current) => {
@@ -232,6 +239,10 @@ function ComparePageContent() {
   };
 
   const handleCompare = async () => {
+    if (compareLoading) {
+      return;
+    }
+
     setCompareError("");
     setSelectionMessage("");
 
@@ -250,8 +261,7 @@ function ComparePageContent() {
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.detail || "Comparison failed.");
+        throw new Error(await getApiErrorMessage(res, "Comparison failed."));
       }
 
       const data: CompareResponse = await res.json();
@@ -299,8 +309,9 @@ function ComparePageContent() {
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.detail || "Failed to save comparison.");
+        throw new Error(
+          await getApiErrorMessage(res, "Failed to save comparison."),
+        );
       }
 
       const data: SaveComparisonResponse = await res.json();
@@ -381,7 +392,8 @@ function ComparePageContent() {
 
                         <button
                           onClick={() => handleTogglePaper(paper.id)}
-                          className="shrink-0 text-xs text-[var(--muted)] hover:text-red-500 transition-colors"
+                          disabled={compareLoading}
+                          className="shrink-0 text-xs text-[var(--muted)] hover:text-red-500 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Remove
                         </button>
@@ -495,13 +507,17 @@ function ComparePageContent() {
                     <button
                       key={paper.id}
                       onClick={() => handleTogglePaper(paper.id)}
-                      disabled={selectionLocked}
+                      disabled={selectionLocked || compareLoading}
                       aria-pressed={isSelected}
                       className={`rounded-2xl border p-5 text-left transition-all ${
                         isSelected
                           ? "border-[var(--primary)] bg-[var(--primary)]/5"
                           : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--primary)]/30"
-                      } ${selectionLocked ? "cursor-not-allowed opacity-60" : ""}`}
+                      } ${
+                        selectionLocked || compareLoading
+                          ? "cursor-not-allowed opacity-60"
+                          : ""
+                      }`}
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0">
@@ -524,7 +540,9 @@ function ComparePageContent() {
                         >
                           {isSelected
                             ? "Selected"
-                            : selectionLocked
+                            : compareLoading
+                              ? "Locked"
+                              : selectionLocked
                               ? "Limit reached"
                               : "Select"}
                         </span>
@@ -559,6 +577,21 @@ function ComparePageContent() {
             )}
           </section>
         </div>
+
+        {compareLoading && (
+          <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] px-6 py-8">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+              <div className="h-6 w-6 shrink-0 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
+              <div>
+                <h2 className="text-lg font-semibold">Comparing selected papers</h2>
+                <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
+                  Normalizing paper evidence, generating missing breakdowns if
+                  needed, and building the comparison matrix.
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
 
         {compareResult && (
           <section className="space-y-6 border-t border-[var(--border)] pt-8">

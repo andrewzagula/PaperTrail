@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { getApiErrorMessage } from "@/lib/api-errors";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 interface PaperItem {
@@ -47,7 +49,7 @@ export default function Home() {
   }, []);
 
   const handleDiscover = async () => {
-    if (!question.trim()) return;
+    if (!question.trim() || submitting) return;
     setSubmitting(true);
     setError("");
     try {
@@ -57,8 +59,9 @@ export default function Home() {
         body: JSON.stringify({ question: question.trim(), max_results: 10 }),
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.detail || "Discovery request failed");
+        throw new Error(
+          await getApiErrorMessage(res, "Discovery request failed"),
+        );
       }
       const data = await res.json();
       router.push(`/discover/${data.id}`);
@@ -84,7 +87,11 @@ export default function Home() {
               type="text"
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleDiscover()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !submitting) {
+                  handleDiscover();
+                }
+              }}
               placeholder="What is your research question?"
               className="flex-1 px-4 py-3 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--muted)] focus:outline-none focus:border-[var(--primary)] transition-colors"
               disabled={submitting}

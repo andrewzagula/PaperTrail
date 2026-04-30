@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
+from app.diagnostics import build_health_details
 from app.routers import compare, discovery, ideas, implementations, papers, workspace
 
 
@@ -41,3 +42,8 @@ app.include_router(workspace.router)
 @app.get("/health")
 def health_check():
     return {"status": "ok", "service": "papertrail-api"}
+
+
+@app.get("/health/details")
+def health_details():
+    return build_health_details()

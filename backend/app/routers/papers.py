@@ -14,6 +14,7 @@ from app.services.arxiv_fetcher import (
     extract_arxiv_id,
     fetch_arxiv_metadata,
 )
+from app.services.errors import UserSafeServiceError
 from app.services.paper_embeddings import (
     EMBEDDING_STATUS_READY,
     get_paper_embedding_status,
@@ -30,6 +31,7 @@ PDF_DIR = settings.data_dir / "pdfs"
 PDF_DIR.mkdir(exist_ok=True)
 
 DEFAULT_USER_EMAIL = "local@papertrail.dev"
+PDF_TEXT_EXTRACTION_DETAIL = "Could not extract text from PDF."
 
 
 class IngestArxivRequest(BaseModel):
@@ -145,6 +147,10 @@ def _get_paper_or_404(db: Session, paper_id: str) -> Paper:
     return paper
 
 
+def _raise_user_safe_http_error(error: UserSafeServiceError):
+    raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+
+
 def _build_reembed_response(
     db: Session,
     paper: Paper,
@@ -238,12 +244,15 @@ async def ingest_arxiv(req: IngestArxivRequest, db: Session = Depends(get_db)):
 
     user = _get_or_create_default_user(db)
 
-    metadata = await fetch_arxiv_metadata(arxiv_id)
-    pdf_path = await download_arxiv_pdf(arxiv_id)
+    try:
+        metadata = await fetch_arxiv_metadata(arxiv_id)
+        pdf_path = await download_arxiv_pdf(arxiv_id)
+        raw_text = extract_text(pdf_path)
+    except UserSafeServiceError as error:
+        _raise_user_safe_http_error(error)
 
-    raw_text = extract_text(pdf_path)
     if not raw_text.strip():
-        raise HTTPException(status_code=422, detail="Could not extract text from PDF")
+        raise HTTPException(status_code=422, detail=PDF_TEXT_EXTRACTION_DETAIL)
 
     sections_data = split_into_sections(raw_text)
 
@@ -282,11 +291,21 @@ async def ingest_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)
     content = await file.read()
     pdf_path.write_bytes(content)
 
-    raw_text = extract_text(pdf_path)
-    if not raw_text.strip():
-        raise HTTPException(status_code=422, detail="Could not extract text from PDF")
+    try:
+        raw_text = extract_text(pdf_path)
+    except UserSafeServiceError as error:
+        pdf_path.unlink(missing_ok=True)
+        _raise_user_safe_http_error(error)
 
-    pdf_meta = extract_metadata(pdf_path)
+    if not raw_text.strip():
+        pdf_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=422, detail=PDF_TEXT_EXTRACTION_DETAIL)
+
+    try:
+        pdf_meta = extract_metadata(pdf_path)
+    except UserSafeServiceError as error:
+        pdf_path.unlink(missing_ok=True)
+        _raise_user_safe_http_error(error)
     sections_data = split_into_sections(raw_text)
 
     title = pdf_meta["title"] or Path(file.filename).stem

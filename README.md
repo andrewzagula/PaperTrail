@@ -4,34 +4,13 @@ PaperTrail is a self-hosted research workspace for finding, reading, comparing, 
 
 It is built for a single local user. There are no hosted accounts, no required cloud database, and no required Docker setup. Runtime state lives on your machine in SQLite, local PDF files, and a local ChromaDB vector store.
 
-> Project status: pre-1.0. The core local workflows are implemented, but the app is still evolving and should be treated as an experimental research tool.
+## Features
 
-## What PaperTrail Does
-
-- Starts from a plain-language research question.
-- Generates targeted arXiv search queries.
-- Searches arXiv, deduplicates results, and ranks papers by relevance.
-- Ingests papers from arXiv links, discovery results, or uploaded PDFs.
-- Extracts PDF text and sections for browsing, analysis, and retrieval.
-- Produces structured paper breakdowns covering problem, method, results, limitations, contributions, and future work.
-- Supports grounded chat over an ingested paper using section retrieval.
-- Compares multiple saved papers with normalized profiles, a comparison table, warnings, and a narrative summary.
-- Generates follow-on research ideas from papers or a topic.
-- Turns a paper into an implementation-oriented plan with algorithm steps, pseudocode, assumptions, setup notes, tests, and starter code.
-- Saves comparisons, ideas, and implementation plans into a local workspace.
-
-## What It Is Not
-
-PaperTrail is intentionally bounded:
-
-- It searches arXiv only.
-- It does not browse the open web.
-- It does not autonomously follow citation chains.
-- It does not run open-ended multi-step research loops without user action.
-- It does not provide multi-user auth, hosted sync, or collaboration features.
-- It is not a replacement for reading the source paper.
-
-The goal is a focused local research assistant, not an autonomous research agent.
+- Discover and rank relevant arXiv papers from a plain-language research question.
+- Ingest arXiv papers or uploaded PDFs into a local searchable workspace.
+- Generate structured paper breakdowns and grounded paper chat.
+- Compare saved papers and generate follow-on research ideas.
+- Create implementation-oriented plans with pseudocode, setup notes, tests, and starter code.
 
 ## Tech Stack
 
@@ -49,7 +28,8 @@ The goal is a focused local research assistant, not an autonomous research agent
 ## Requirements
 
 - Python 3.11+
-- Node.js 18+
+- Node.js 18.18+
+- Git
 - One supported chat and structured-output provider:
   - OpenAI
   - Anthropic
@@ -61,6 +41,8 @@ The goal is a focused local research assistant, not an autonomous research agent
   - sentence-transformers running locally
 
 Hosted LLM providers receive the prompts and paper excerpts required for the workflow you run. Use Ollama and local sentence-transformers if you need a fully local model path.
+
+The shell commands below assume macOS or Linux. On Windows, use the equivalent virtual-environment activation command for your shell.
 
 ## Quick Start
 
@@ -83,7 +65,9 @@ Edit `.env` for the provider you want to use. For the default OpenAI setup, set:
 
 ```bash
 LLM_PROVIDER=openai
+LLM_MODEL=gpt-4o-mini
 EMBEDDING_PROVIDER=openai
+EMBEDDING_MODEL=text-embedding-3-small
 OPENAI_API_KEY=sk-your-key
 ```
 
@@ -111,6 +95,35 @@ npm run dev
 Open `http://localhost:3000`.
 
 The API will be available at `http://localhost:8000`, with FastAPI docs at `http://localhost:8000/docs`.
+
+Check backend setup state with:
+
+```bash
+curl http://localhost:8000/health/details
+```
+
+The diagnostics response includes provider names, model names, local data paths, and missing setting names. It does not include API keys.
+
+## Try It
+
+After the backend and frontend are running, this short path exercises the main local workflow.
+
+Recommended papers:
+
+- `1706.03762` - "Attention Is All You Need"
+- `1409.0473` - "Neural Machine Translation by Jointly Learning to Align and Translate"
+
+Steps:
+
+1. Start the backend with `python run.py` and the frontend with `cd frontend && npm run dev`.
+2. Open `http://localhost:8000/health/details` and confirm the selected LLM and embedding providers are configured. This endpoint reports provider/model names and missing settings only; it does not return API keys.
+3. On the home page, search for `attention mechanisms for neural machine translation`.
+4. Ingest one or both recommended papers from discovery results. If discovery does not return them, ingest them directly from `/papers/new`.
+5. Open a paper page, generate the structured breakdown, and ask a grounded question such as `What problem does self-attention solve in the model?`.
+6. Compare the papers from `/compare`, generate ideas from `/ideas`, or create an implementation plan from a paper page.
+7. Save generated outputs and reopen them from `/dashboard`.
+
+Hosted providers will receive the prompts and paper excerpts needed for the workflow steps you run. Generated implementation output is starter scaffolding, not verified reproduction code.
 
 ## Configuration
 
@@ -191,28 +204,9 @@ Runtime data is created under `data/` and is ignored by Git.
 
 Delete `data/` to reset your local workspace.
 
-## Main API Surface
+## API Reference
 
-| Endpoint | Purpose |
-| --- | --- |
-| `GET /health` | Backend health check |
-| `POST /discover/` | Start an arXiv discovery run |
-| `GET /discover/` | List discovery runs |
-| `GET /discover/{run_id}` | Fetch one discovery run and ranked results |
-| `POST /discover/{run_id}/ingest/{result_id}` | Ingest a discovery result |
-| `POST /papers/ingest/arxiv` | Ingest a paper from an arXiv URL or ID |
-| `POST /papers/ingest/pdf` | Upload and ingest a PDF |
-| `GET /papers/` | List ingested papers |
-| `GET /papers/{paper_id}` | Fetch paper metadata, sections, and analysis state |
-| `POST /papers/{paper_id}/analyze` | Generate a structured breakdown |
-| `POST /papers/{paper_id}/chat` | Ask a grounded question about one paper |
-| `POST /papers/compare` | Compare selected papers |
-| `POST /papers/ideas` | Generate research ideas |
-| `POST /papers/{paper_id}/implement` | Generate an implementation plan |
-| `GET /workspace/summary` | Fetch dashboard summary data |
-| `GET /workspace/saved-items` | List saved comparisons, ideas, and implementation plans |
-
-See `http://localhost:8000/docs` for the full generated OpenAPI reference.
+When the backend is running, open `http://localhost:8000/docs` for the generated OpenAPI reference.
 
 ## Project Layout
 
@@ -272,18 +266,22 @@ cd frontend
 npm run build
 ```
 
+## Troubleshooting
+
+| Problem | What to check |
+| --- | --- |
+| Missing provider API key | Open `http://localhost:8000/health/details`. Set the missing variable in `.env`, then restart `python run.py`. |
+| Provider request failed or rate limited | Confirm the provider account has access to the configured model. Try a smaller workflow, wait for rate limits to reset, or switch the relevant per-workflow model variable to a cheaper/faster model. |
+| Ollama requests fail | Confirm Ollama is running at `OLLAMA_BASE_URL`, pull the configured model locally, and restart the backend after changing `.env`. |
+| Local sentence-transformers fails | Confirm `EMBEDDING_PROVIDER=sentence_transformers`, the Python dependencies installed successfully, and `LOCAL_EMBEDDING_DEVICE` is valid for your machine or left blank. |
+| Chat says embeddings are missing, stale, or failed | Rebuild embeddings for one paper with `curl -X POST http://localhost:8000/papers/<paper_id>/reembed`, or rebuild all non-ready papers with `curl -X POST http://localhost:8000/papers/reembed -H "Content-Type: application/json" -d '{"force": false}'`. |
+| PDF ingestion fails | Try an arXiv URL first to isolate upload issues. Some PDFs have no extractable text or malformed metadata; PaperTrail needs extractable text for sections and embeddings. |
+| arXiv search or PDF download times out | Retry later. PaperTrail depends on the public arXiv API and PDF endpoints, and transient network or service failures can happen. |
+| Frontend cannot reach backend | Confirm the backend is running on `http://localhost:8000`. If using a different backend URL, set `NEXT_PUBLIC_API_URL` before starting `npm run dev` or `npm run build`. |
+
 ## Contributing
 
-Contributions are welcome. The most useful issues and pull requests are scoped to one workflow or one layer of the stack.
-
-Good first areas:
-
-- Provider compatibility fixes
-- Retrieval and citation quality improvements
-- PDF parsing edge cases
-- Tests for discovery, comparison, ideas, and implementation workflows
-- Frontend usability and accessibility improvements
-- Documentation for local model setups
+Contributions are welcome. Please keep issues and pull requests focused in scope.
 
 Before opening a pull request:
 
@@ -296,6 +294,7 @@ Before opening a pull request:
 
 - Do not commit `.env`, provider keys, local PDFs, Chroma data, or SQLite data.
 - The default app has a single local user record and no authentication layer.
+- Do not expose the backend to an untrusted network without adding authentication and deployment hardening.
 - Hosted model providers receive paper text excerpts and prompts for workflows you run through that provider.
 - The project does not add its own telemetry.
 

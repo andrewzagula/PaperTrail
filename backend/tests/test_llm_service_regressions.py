@@ -259,6 +259,40 @@ class StructuredWorkflowModelRegressionTests(unittest.TestCase):
         self.assertIn("does not have embeddings", response["answer"])
         self.assertEqual(response["citations"], [])
 
+    @patch("app.services.chat_rag.get_structured_client")
+    @patch("app.services.chat_rag.query_embeddings")
+    @patch("app.services.chat_rag.generate_query_embedding")
+    def test_generate_chat_response_abstains_when_model_returns_no_citations(
+        self,
+        mock_generate_query_embedding,
+        mock_query_embeddings,
+        mock_get_structured_client,
+    ):
+        mock_generate_query_embedding.return_value = [0.1, 0.2]
+        mock_query_embeddings.return_value = {
+            "documents": [["Method context with relevant-looking text."]],
+            "metadatas": [[{"section_id": "sec-1", "section_title": "Method"}]],
+            "distances": [[0.01]],
+        }
+        client = Mock()
+        client.generate_structured.return_value = {
+            "answer": "Unsupported answer without evidence.",
+            "citations": [],
+        }
+        mock_get_structured_client.return_value = client
+
+        response = generate_chat_response(
+            paper_id="paper-1",
+            paper_title="Test Paper",
+            query="What is the method?",
+            history=[],
+        )
+
+        self.assertTrue(
+            response["answer"].startswith("Could not answer from retrieved context.")
+        )
+        self.assertEqual(response["citations"], [])
+
     @patch("app.services.paper_compare.get_structured_client")
     def test_extract_compare_profile_details_uses_configured_workflow_model(
         self,

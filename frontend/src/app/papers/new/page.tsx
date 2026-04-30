@@ -3,20 +3,29 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { getApiErrorMessage } from "@/lib/api-errors";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+type PendingAction = "arxiv" | "pdf";
 
 export default function NewPaper() {
   const router = useRouter();
   const [arxivUrl, setArxivUrl] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
 
+  const loading = pendingAction !== null;
+  const loadingMessage =
+    pendingAction === "arxiv"
+      ? "Fetching arXiv metadata, downloading the PDF, and preparing the paper..."
+      : "Reading the PDF, extracting text, splitting sections, and preparing embeddings...";
+
   async function handleArxivSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!arxivUrl.trim()) return;
+    if (!arxivUrl.trim() || loading) return;
 
-    setLoading(true);
+    setPendingAction("arxiv");
     setError("");
 
     try {
@@ -27,8 +36,9 @@ export default function NewPaper() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || "Failed to ingest paper");
+        throw new Error(
+          await getApiErrorMessage(res, "Failed to ingest paper"),
+        );
       }
 
       const data = await res.json();
@@ -36,17 +46,19 @@ export default function NewPaper() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
-      setLoading(false);
+      setPendingAction(null);
     }
   }
 
   async function handleFileUpload(file: File) {
+    if (loading) return;
+
     if (!file.name.toLowerCase().endsWith(".pdf")) {
       setError("Please upload a PDF file");
       return;
     }
 
-    setLoading(true);
+    setPendingAction("pdf");
     setError("");
 
     try {
@@ -59,8 +71,9 @@ export default function NewPaper() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || "Failed to ingest paper");
+        throw new Error(
+          await getApiErrorMessage(res, "Failed to ingest paper"),
+        );
       }
 
       const data = await res.json();
@@ -68,7 +81,7 @@ export default function NewPaper() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
-      setLoading(false);
+      setPendingAction(null);
     }
   }
 
@@ -159,7 +172,7 @@ export default function NewPaper() {
         <div className="mt-8 text-center">
           <div className="inline-block w-6 h-6 border-2 border-[var(--primary)] border-t-transparent rounded-full animate-spin" />
           <p className="text-sm text-[var(--muted)] mt-3">
-            Extracting text, splitting sections, generating embeddings...
+            {loadingMessage}
           </p>
         </div>
       )}

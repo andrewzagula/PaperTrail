@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
+import { getApiErrorMessage } from "@/lib/api-errors";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 interface WorkspaceCounts {
@@ -149,23 +151,6 @@ function typeClassName(itemType: string): string {
   }
 
   return "border-[var(--border)] bg-[var(--card)] text-[var(--muted)]";
-}
-
-async function getApiErrorMessage(
-  response: Response,
-  fallback: string,
-): Promise<string> {
-  const data = await response.json().catch(() => null);
-  if (
-    data &&
-    typeof data === "object" &&
-    "detail" in data &&
-    typeof data.detail === "string"
-  ) {
-    return data.detail;
-  }
-
-  return fallback;
 }
 
 function isEmptyWorkspace(summary: WorkspaceSummary): boolean {

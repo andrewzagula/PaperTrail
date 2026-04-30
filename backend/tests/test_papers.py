@@ -1,7 +1,11 @@
+import asyncio
+import tempfile
 import uuid
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
+import httpx
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -11,10 +15,19 @@ from app.database import Base, get_db
 from app.llm.errors import CONFIGURATION_ERROR_DETAIL, MissingProviderCredentialsError
 from app.main import app
 from app.models.models import Paper, PaperEmbeddingState, PaperSection, User
+from app.services.arxiv_fetcher import (
+    ARXIV_INVALID_PDF_DETAIL,
+    ARXIV_NOT_FOUND_DETAIL,
+    ARXIV_UNAVAILABLE_DETAIL,
+    download_arxiv_pdf,
+    fetch_arxiv_metadata,
+)
+from app.services.errors import UserSafeServiceError
 from app.services.paper_embeddings import (
     EMBEDDING_STATUS_FAILED,
     EMBEDDING_STATUS_READY,
 )
+from app.services.pdf_parser import PDF_READ_ERROR_DETAIL
 from app.services.vector_store import get_active_collection_name
 
 DEFAULT_USER_EMAIL = "local@papertrail.dev"
@@ -252,6 +265,172 @@ class PaperEndpointTests(unittest.TestCase):
             )
             self.assertIsNotNone(active_state)
             self.assertEqual(active_state.status, EMBEDDING_STATUS_FAILED)
+
+    def test_pdf_upload_rejects_non_pdf_files(self):
+        response = self.client.post(
+            "/papers/ingest/pdf",
+            files={"file": ("notes.txt", b"not a pdf", "text/plain")},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"], "File must be a PDF")
+
+    def test_pdf_upload_maps_corrupt_pdf_to_user_safe_422(self):
+        response = self.client.post(
+            "/papers/ingest/pdf",
+            files={"file": ("broken.pdf", b"not a real pdf", "application/pdf")},
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["detail"], PDF_READ_ERROR_DETAIL)
+
+        with self.session_local() as db:
+            self.assertEqual(db.query(Paper).count(), 0)
+
+    def test_arxiv_ingest_maps_timeout_to_user_safe_503(self):
+        with patch(
+            "app.routers.papers.fetch_arxiv_metadata",
+            side_effect=UserSafeServiceError(503, ARXIV_UNAVAILABLE_DETAIL),
+        ):
+            response = self.client.post(
+                "/papers/ingest/arxiv",
+                json={"arxiv_url": "2401.12345"},
+            )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"], ARXIV_UNAVAILABLE_DETAIL)
+
+    def test_arxiv_ingest_maps_missing_paper_to_user_safe_404(self):
+        with patch(
+            "app.routers.papers.fetch_arxiv_metadata",
+            side_effect=UserSafeServiceError(404, ARXIV_NOT_FOUND_DETAIL),
+        ):
+            response = self.client.post(
+                "/papers/ingest/arxiv",
+                json={"arxiv_url": "2401.12345"},
+            )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["detail"], ARXIV_NOT_FOUND_DETAIL)
+
+    def test_arxiv_ingest_maps_pdf_parse_failure_to_user_safe_422(self):
+        with patch(
+            "app.routers.papers.fetch_arxiv_metadata",
+            return_value={
+                "title": "Paper",
+                "authors": "Author",
+                "abstract": "Abstract",
+            },
+        ), patch(
+            "app.routers.papers.download_arxiv_pdf",
+            return_value=Path("/tmp/papertrail-test.pdf"),
+        ), patch(
+            "app.routers.papers.extract_text",
+            side_effect=UserSafeServiceError(422, PDF_READ_ERROR_DETAIL),
+        ):
+            response = self.client.post(
+                "/papers/ingest/arxiv",
+                json={"arxiv_url": "2401.12345"},
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["detail"], PDF_READ_ERROR_DETAIL)
+
+        with self.session_local() as db:
+            self.assertEqual(db.query(Paper).count(), 0)
+
+    def test_pdf_ingest_still_saves_paper_when_embedding_fails(self):
+        sections = [
+            {
+                "title": "Abstract",
+                "order": 0,
+                "content": "This paper studies deterministic tests.",
+            }
+        ]
+
+        with patch(
+            "app.routers.papers.extract_text",
+            return_value="Abstract\nThis paper studies deterministic tests.",
+        ), patch(
+            "app.routers.papers.extract_metadata",
+            return_value={"title": "Embedding Failure Paper", "authors": "A. Tester"},
+        ), patch(
+            "app.routers.papers.split_into_sections",
+            return_value=sections,
+        ), patch(
+            "app.routers.papers.sync_paper_embeddings",
+            side_effect=RuntimeError("embedding backend unavailable"),
+        ):
+            response = self.client.post(
+                "/papers/ingest/pdf",
+                files={"file": ("paper.pdf", b"fake", "application/pdf")},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["title"], "Embedding Failure Paper")
+        self.assertEqual(payload["num_sections"], 1)
+        self.assertEqual(payload["num_chunks_embedded"], 0)
+
+        with self.session_local() as db:
+            self.assertEqual(db.query(Paper).count(), 1)
+            self.assertEqual(db.query(PaperSection).count(), 1)
+
+    def test_fetch_arxiv_metadata_maps_empty_atom_feed_to_404(self):
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return None
+
+            async def get(self, url):
+                return httpx.Response(
+                    200,
+                    text="<feed><title>arXiv Query Results</title></feed>",
+                    request=httpx.Request("GET", url),
+                )
+
+        with patch("app.services.arxiv_fetcher.httpx.AsyncClient", FakeClient):
+            with self.assertRaises(UserSafeServiceError) as context:
+                asyncio.run(fetch_arxiv_metadata("2401.12345"))
+
+        self.assertEqual(context.exception.status_code, 404)
+        self.assertEqual(context.exception.detail, ARXIV_NOT_FOUND_DETAIL)
+
+    def test_download_arxiv_pdf_rejects_invalid_pdf_without_writing_file(self):
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return None
+
+            async def get(self, url):
+                return httpx.Response(
+                    200,
+                    content=b"<html>not a pdf</html>",
+                    request=httpx.Request("GET", url),
+                )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pdf_dir = Path(tmpdir)
+            with patch("app.services.arxiv_fetcher.PDF_DIR", pdf_dir), patch(
+                "app.services.arxiv_fetcher.httpx.AsyncClient",
+                FakeClient,
+            ):
+                with self.assertRaises(UserSafeServiceError) as context:
+                    asyncio.run(download_arxiv_pdf("2401.12345"))
+
+            self.assertEqual(context.exception.status_code, 502)
+            self.assertEqual(context.exception.detail, ARXIV_INVALID_PDF_DETAIL)
+            self.assertFalse((pdf_dir / "2401.12345.pdf").exists())
 
 
 if __name__ == "__main__":

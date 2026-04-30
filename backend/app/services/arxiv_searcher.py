@@ -4,6 +4,12 @@ from dataclasses import dataclass
 
 import httpx
 
+from app.services.arxiv_fetcher import (
+    ARXIV_REQUEST_FAILED_DETAIL,
+    ARXIV_UNAVAILABLE_DETAIL,
+)
+from app.services.errors import UserSafeServiceError
+
 ARXIV_SEARCH_URL = "http://export.arxiv.org/api/query"
 RATE_LIMIT_DELAY = 3.0
 
@@ -26,9 +32,16 @@ async def search_arxiv(query: str, max_results: int = 20) -> list[ArxivResult]:
         "sortOrder": "descending",
     }
 
-    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-        resp = await client.get(ARXIV_SEARCH_URL, params=params)
-        resp.raise_for_status()
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            resp = await client.get(ARXIV_SEARCH_URL, params=params)
+            resp.raise_for_status()
+    except httpx.TimeoutException as error:
+        raise UserSafeServiceError(503, ARXIV_UNAVAILABLE_DETAIL) from error
+    except httpx.RequestError as error:
+        raise UserSafeServiceError(503, ARXIV_UNAVAILABLE_DETAIL) from error
+    except httpx.HTTPStatusError as error:
+        raise UserSafeServiceError(502, ARXIV_REQUEST_FAILED_DETAIL) from error
 
     return _parse_atom_feed(resp.text)
 

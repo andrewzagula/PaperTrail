@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 
+import { getApiErrorMessage } from "@/lib/api-errors";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 type TargetFramework = "pytorch" | "generic-python";
@@ -163,7 +165,7 @@ export default function PaperImplementationPage() {
       try {
         const res = await fetch(`${API_URL}/papers/${paperId}`);
         if (!res.ok) {
-          throw new Error("Paper not found.");
+          throw new Error(await getApiErrorMessage(res, "Paper not found."));
         }
 
         const data: Paper = await res.json();
@@ -221,6 +223,10 @@ export default function PaperImplementationPage() {
   };
 
   const handleGenerateImplementation = async () => {
+    if (generationLoading) {
+      return;
+    }
+
     setGenerationLoading(true);
     setGenerationError("");
     setSaveError("");
@@ -240,8 +246,9 @@ export default function PaperImplementationPage() {
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.detail || "Implementation generation failed.");
+        throw new Error(
+          await getApiErrorMessage(res, "Implementation generation failed."),
+        );
       }
 
       const data: ImplementationResponse = await res.json();
@@ -294,8 +301,9 @@ export default function PaperImplementationPage() {
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.detail || "Failed to save implementation.");
+        throw new Error(
+          await getApiErrorMessage(res, "Failed to save implementation."),
+        );
       }
 
       const data: SaveImplementationResponse = await res.json();
@@ -488,7 +496,22 @@ export default function PaperImplementationPage() {
           </aside>
 
           <section className="min-w-0 space-y-6">
-            {!implementationResult ? (
+            {generationLoading ? (
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-6 py-14">
+                <div className="mx-auto flex max-w-2xl flex-col items-center gap-4 text-center">
+                  <div className="h-7 w-7 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
+                  <div>
+                    <h2 className="text-xl font-semibold">
+                      Generating implementation scaffold
+                    </h2>
+                    <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
+                      Reading method evidence, extracting algorithm steps,
+                      drafting starter files, and carrying forward caveats.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : !implementationResult ? (
               <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--card)] px-6 py-14 text-center">
                 <h2 className="text-xl font-semibold">No implementation generated</h2>
                 <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">

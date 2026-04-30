@@ -3,6 +3,8 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
+import { getApiErrorMessage } from "@/lib/api-errors";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const MAX_IDEA_SELECTION = 5;
 
@@ -165,7 +167,9 @@ function IdeasPageContent() {
       try {
         const res = await fetch(`${API_URL}/papers/`);
         if (!res.ok) {
-          throw new Error("Failed to load your paper library.");
+          throw new Error(
+            await getApiErrorMessage(res, "Failed to load your paper library."),
+          );
         }
 
         const data: PaperListItem[] = await res.json();
@@ -223,6 +227,10 @@ function IdeasPageContent() {
   };
 
   const handleTogglePaper = (paperId: string) => {
+    if (generationLoading) {
+      return;
+    }
+
     if (selectedIds.includes(paperId)) {
       setSelectedIds(selectedIds.filter((id) => id !== paperId));
       setSelectionMessage("");
@@ -241,6 +249,10 @@ function IdeasPageContent() {
   };
 
   const handleGenerateIdeas = async () => {
+    if (generationLoading) {
+      return;
+    }
+
     const normalizedTopic = topic.trim();
 
     setGenerationError("");
@@ -271,8 +283,7 @@ function IdeasPageContent() {
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.detail || "Idea generation failed.");
+        throw new Error(await getApiErrorMessage(res, "Idea generation failed."));
       }
 
       const data: IdeaGenerationResponse = await res.json();
@@ -329,8 +340,7 @@ function IdeasPageContent() {
       });
 
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.detail || "Failed to save ideas.");
+        throw new Error(await getApiErrorMessage(res, "Failed to save ideas."));
       }
 
       const data: SaveIdeasResponse = await res.json();
@@ -587,6 +597,21 @@ function IdeasPageContent() {
                     </button>
                   );
                 })}
+              </div>
+            )}
+
+            {generationLoading && (
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] px-6 py-8">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                  <div className="h-6 w-6 shrink-0 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
+                  <div>
+                    <h2 className="text-lg font-semibold">Generating grounded ideas</h2>
+                    <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
+                      Reviewing selected sources, applying the requested focus,
+                      and preserving warnings for weak evidence.
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
 

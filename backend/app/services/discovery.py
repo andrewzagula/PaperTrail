@@ -5,6 +5,25 @@ from app.services.arxiv_searcher import ArxivResult, search_arxiv_multi
 DEFAULT_MAX_QUERIES = 3
 DEFAULT_MAX_RESULTS_PER_QUERY = 20
 DEFAULT_MAX_RETURN = 10
+MIN_UNIQUE_RESULTS_FOR_COVERAGE = 5
+MIN_RESULTS_BUDGET_FOR_COVERAGE = 5
+HIGH_CONFIDENCE_RELEVANCE_THRESHOLD = 0.60
+
+FEWER_QUERIES_WARNING = (
+    "Generated fewer usable queries than requested; discovery coverage may be narrow."
+)
+NO_UNIQUE_RESULTS_WARNING = (
+    "arXiv returned no unique papers for the generated queries."
+)
+LOW_UNIQUE_RESULTS_WARNING = (
+    "arXiv returned very few unique papers; discovery coverage is low."
+)
+NO_HIGH_CONFIDENCE_RESULTS_WARNING = (
+    "No high-confidence discovery matches were found; review low-score results carefully."
+)
+SMALL_RESULT_BUDGET_WARNING = (
+    "Discovery result budget is small; coverage may be too narrow for broad coverage."
+)
 QUERY_RESPONSE_JSON_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -38,6 +57,71 @@ RANKING_RESPONSE_JSON_SCHEMA = {
 }
 
 
+def _normalize_queries(queries: object, max_queries: int) -> list[str]:
+    normalized = []
+    seen = set()
+
+    if not isinstance(queries, list):
+        return normalized
+
+    for query in queries:
+        if query is None:
+            continue
+        stripped = str(query).strip()
+        if not stripped:
+            continue
+        key = " ".join(stripped.split()).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(stripped)
+        if len(normalized) >= max_queries:
+            break
+
+    return normalized
+
+
+def _dedupe_warnings(warnings: list[str]) -> list[str]:
+    deduped = []
+    seen = set()
+    for warning in warnings:
+        if warning in seen:
+            continue
+        seen.add(warning)
+        deduped.append(warning)
+    return deduped
+
+
+def _build_discovery_warnings(
+    queries: list[str],
+    max_queries: int,
+    total_found: int,
+    ranked_results: list[dict],
+    max_return: int,
+) -> list[str]:
+    warnings = []
+
+    if len(queries) < max_queries:
+        warnings.append(FEWER_QUERIES_WARNING)
+
+    if total_found == 0:
+        warnings.append(NO_UNIQUE_RESULTS_WARNING)
+    elif total_found < MIN_UNIQUE_RESULTS_FOR_COVERAGE:
+        warnings.append(LOW_UNIQUE_RESULTS_WARNING)
+
+    if ranked_results:
+        max_score = max(
+            float(result.get("relevance_score") or 0) for result in ranked_results
+        )
+        if max_score < HIGH_CONFIDENCE_RELEVANCE_THRESHOLD:
+            warnings.append(NO_HIGH_CONFIDENCE_RESULTS_WARNING)
+
+    if max_return < MIN_RESULTS_BUDGET_FOR_COVERAGE:
+        warnings.append(SMALL_RESULT_BUDGET_WARNING)
+
+    return _dedupe_warnings(warnings)
+
+
 async def generate_search_queries(question: str, max_queries: int = DEFAULT_MAX_QUERIES) -> list[str]:
     payload = get_structured_client().generate_structured(
         model=settings.discovery_query_model,
@@ -67,8 +151,7 @@ async def generate_search_queries(question: str, max_queries: int = DEFAULT_MAX_
         ],
     )
 
-    queries = payload.get("queries", [])
-    return [str(q) for q in queries[:max_queries]]
+    return _normalize_queries(payload.get("queries", []), max_queries)
 
 
 async def rank_results(
@@ -150,14 +233,24 @@ async def run_discovery(
     )
 
     ranked = await rank_results(question, all_results, max_return=max_return)
+    warnings = _build_discovery_warnings(
+        queries=queries,
+        max_queries=max_queries,
+        total_found=len(all_results),
+        ranked_results=ranked,
+        max_return=max_return,
+    )
 
     return {
         "queries": queries,
         "total_found": len(all_results),
         "ranked_results": ranked,
+        "warnings": warnings,
         "budget_used": {
             "queries_generated": len(queries),
             "total_papers_fetched": len(all_results),
             "papers_ranked": len(ranked),
+            "max_results_requested": max_return,
+            "warnings": warnings,
         },
     }

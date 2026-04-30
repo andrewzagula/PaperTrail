@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 
+import { getApiErrorMessage } from "@/lib/api-errors";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 type JsonRecord = Record<string, unknown>;
@@ -152,23 +154,6 @@ function safeJson(value: unknown): string {
   } catch {
     return "Payload could not be serialized.";
   }
-}
-
-async function getApiErrorMessage(
-  response: Response,
-  fallback: string,
-): Promise<string> {
-  const data = await response.json().catch(() => null);
-  if (
-    data &&
-    typeof data === "object" &&
-    "detail" in data &&
-    typeof data.detail === "string"
-  ) {
-    return data.detail;
-  }
-
-  return fallback;
 }
 
 async function copyTextToClipboard(text: string) {
@@ -1189,15 +1174,19 @@ export default function SavedArtifactDetailPage() {
     try {
       const res = await fetch(`${API_URL}/workspace/saved-items/${itemId}`);
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        const detail = isRecord(data) ? asString(data.detail) : "";
         if (res.status === 400) {
-          throw new Error(detail || "Invalid saved artifact link.");
+          throw new Error(
+            await getApiErrorMessage(res, "Invalid saved artifact link."),
+          );
         }
         if (res.status === 404) {
-          throw new Error(detail || "Saved artifact not found.");
+          throw new Error(
+            await getApiErrorMessage(res, "Saved artifact not found."),
+          );
         }
-        throw new Error(detail || "Failed to load saved artifact.");
+        throw new Error(
+          await getApiErrorMessage(res, "Failed to load saved artifact."),
+        );
       }
 
       const data = await res.json();

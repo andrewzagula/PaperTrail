@@ -6,12 +6,17 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.llm import get_provider_error_response
-from app.models.models import DiscoveryResult, DiscoveryRun, User
+from app.models.models import DiscoveryResult, DiscoveryRun, Paper, PaperSection, User
+from app.services.arxiv_fetcher import download_arxiv_pdf, fetch_arxiv_metadata
+from app.services.errors import UserSafeServiceError
 from app.services.paper_embeddings import sync_paper_embeddings
+from app.services.pdf_parser import extract_text
+from app.services.section_splitter import split_into_sections
 
 router = APIRouter(prefix="/discover", tags=["discovery"])
 
 DEFAULT_USER_EMAIL = "local@papertrail.dev"
+PDF_TEXT_EXTRACTION_DETAIL = "Could not extract text from PDF."
 
 
 class DiscoverRequest(BaseModel):
@@ -41,6 +46,7 @@ class DiscoveryRunResponse(BaseModel):
     status: str
     generated_queries: list[str] | None
     budget_used: dict | None
+    warnings: list[str]
     error_message: str | None
     created_at: str
     results: list[DiscoveryResultResponse]
@@ -69,6 +75,18 @@ def _get_or_create_default_user(db: Session) -> User:
     return user
 
 
+def _raise_user_safe_http_error(error: UserSafeServiceError):
+    raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+
+
+def _get_discovery_warnings(run: DiscoveryRun) -> list[str]:
+    budget_used = run.budget_used if isinstance(run.budget_used, dict) else {}
+    warnings = budget_used.get("warnings", [])
+    if not isinstance(warnings, list):
+        return []
+    return [str(warning).strip() for warning in warnings if str(warning).strip()]
+
+
 def _run_to_response(run: DiscoveryRun) -> DiscoveryRunResponse:
     return DiscoveryRunResponse(
         id=str(run.id),
@@ -76,6 +94,7 @@ def _run_to_response(run: DiscoveryRun) -> DiscoveryRunResponse:
         status=run.status,
         generated_queries=run.generated_queries,
         budget_used=run.budget_used,
+        warnings=_get_discovery_warnings(run),
         error_message=run.error_message,
         created_at=run.created_at.isoformat() if run.created_at else "",
         results=[
@@ -116,7 +135,11 @@ async def _execute_discovery(run_id: uuid.UUID, question: str, max_results: int)
             )
 
             run.generated_queries = result["queries"]
-            run.budget_used = result["budget_used"]
+            budget_used = dict(result.get("budget_used") or {})
+            warnings = result.get("warnings") or budget_used.get("warnings") or []
+            budget_used["warnings"] = warnings
+            budget_used.setdefault("max_results_requested", max_results)
+            run.budget_used = budget_used
 
             for i, paper in enumerate(result["ranked_results"]):
                 dr = DiscoveryResult(
@@ -140,6 +163,8 @@ async def _execute_discovery(run_id: uuid.UUID, question: str, max_results: int)
             if mapped_error:
                 _, detail = mapped_error
                 run.error_message = detail
+            elif isinstance(e, UserSafeServiceError):
+                run.error_message = e.detail
             else:
                 run.error_message = str(e)
             db.commit()
@@ -239,20 +264,18 @@ async def ingest_discovery_result(
             "paper_id": str(result.paper_id),
         }
 
-    from app.services.arxiv_fetcher import download_arxiv_pdf, fetch_arxiv_metadata
-    from app.services.pdf_parser import extract_text
-    from app.services.section_splitter import split_into_sections
-    from app.models.models import Paper, PaperSection
-
     user = _get_or_create_default_user(db)
 
-    metadata = await fetch_arxiv_metadata(result.arxiv_id)
-    pdf_path = await download_arxiv_pdf(result.arxiv_id)
+    try:
+        metadata = await fetch_arxiv_metadata(result.arxiv_id)
+        pdf_path = await download_arxiv_pdf(result.arxiv_id)
+        raw_text = extract_text(pdf_path)
+    except UserSafeServiceError as error:
+        _raise_user_safe_http_error(error)
 
-    raw_text = extract_text(pdf_path)
     if not raw_text.strip():
         raise HTTPException(
-            status_code=422, detail="Could not extract text from PDF"
+            status_code=422, detail=PDF_TEXT_EXTRACTION_DETAIL
         )
 
     sections_data = split_into_sections(raw_text)

@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 
+import { getApiErrorMessage } from "@/lib/api-errors";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 interface DiscoveryResult {
@@ -23,13 +25,27 @@ interface DiscoveryRun {
   question: string;
   status: string;
   generated_queries: string[] | null;
-  budget_used: { queries_generated?: number; total_papers_fetched?: number; papers_ranked?: number } | null;
+  budget_used: {
+    queries_generated?: number;
+    total_papers_fetched?: number;
+    papers_ranked?: number;
+    max_results_requested?: number;
+    warnings?: string[];
+  } | null;
+  warnings: string[];
   error_message: string | null;
   created_at: string;
   results: DiscoveryResult[];
 }
 
-type IngestingState = Record<string, "loading" | "done" | "error">;
+type IngestStatus = "loading" | "done" | "error";
+type IngestingState = Record<
+  string,
+  {
+    status: IngestStatus;
+    message?: string;
+  }
+>;
 
 export default function DiscoverResultsPage() {
   const params = useParams();
@@ -38,17 +54,32 @@ export default function DiscoverResultsPage() {
 
   const [run, setRun] = useState<DiscoveryRun | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [pollAttempt, setPollAttempt] = useState(0);
   const [ingesting, setIngesting] = useState<IngestingState>({});
   const [showQueries, setShowQueries] = useState(false);
 
   const fetchRun = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/discover/${runId}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        throw new Error(
+          await getApiErrorMessage(res, "Failed to load discovery run."),
+        );
+      }
       const data = await res.json();
-      setRun(data);
+      setRun({
+        ...data,
+        warnings: Array.isArray(data.warnings) ? data.warnings : [],
+      });
+      setLoadError("");
       return data.status;
-    } catch {}
+    } catch (err) {
+      setLoadError(
+        err instanceof Error ? err.message : "Failed to load discovery run.",
+      );
+      return null;
+    }
   }, [runId]);
 
   useEffect(() => {
@@ -68,18 +99,28 @@ export default function DiscoverResultsPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [fetchRun]);
+  }, [fetchRun, pollAttempt]);
+
+  const handleRetryLoad = () => {
+    setLoading(true);
+    setLoadError("");
+    setPollAttempt((current) => current + 1);
+  };
 
   const handleIngest = async (resultId: string) => {
-    setIngesting((prev) => ({ ...prev, [resultId]: "loading" }));
+    setIngesting((prev) => ({ ...prev, [resultId]: { status: "loading" } }));
     try {
       const res = await fetch(
         `${API_URL}/discover/${runId}/ingest/${resultId}`,
         { method: "POST" }
       );
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        throw new Error(
+          await getApiErrorMessage(res, "Failed to ingest this paper."),
+        );
+      }
       const data = await res.json();
-      setIngesting((prev) => ({ ...prev, [resultId]: "done" }));
+      setIngesting((prev) => ({ ...prev, [resultId]: { status: "done" } }));
       setRun((prev) => {
         if (!prev) return prev;
         return {
@@ -89,8 +130,15 @@ export default function DiscoverResultsPage() {
           ),
         };
       });
-    } catch {
-      setIngesting((prev) => ({ ...prev, [resultId]: "error" }));
+    } catch (err) {
+      setIngesting((prev) => ({
+        ...prev,
+        [resultId]: {
+          status: "error",
+          message:
+            err instanceof Error ? err.message : "Failed to ingest this paper.",
+        },
+      }));
     }
   };
 
@@ -101,6 +149,28 @@ export default function DiscoverResultsPage() {
           <div className="w-8 h-8 border-2 border-[var(--primary)] border-t-transparent rounded-full animate-spin mx-auto" />
           <p className="text-[var(--muted)]">Loading...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (loadError && !run) {
+    return (
+      <div className="min-h-screen p-8 max-w-3xl mx-auto">
+        <a
+          href="/"
+          className="text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
+        >
+          &larr; Back to home
+        </a>
+        <div className="mt-8 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500">
+          {loadError}
+        </div>
+        <button
+          onClick={handleRetryLoad}
+          className="mt-4 rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium transition-colors hover:border-[var(--primary)]/30 hover:text-[var(--primary)]"
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -126,6 +196,18 @@ export default function DiscoverResultsPage() {
             &larr; Back to home
           </a>
           <h1 className="text-3xl font-bold mt-4 mb-2">{run.question}</h1>
+
+          {loadError && (
+            <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500">
+              <p>{loadError}</p>
+              <button
+                onClick={handleRetryLoad}
+                className="mt-3 rounded-lg border border-red-500/30 px-3 py-1.5 font-medium transition-colors hover:bg-red-500/10"
+              >
+                Retry refresh
+              </button>
+            </div>
+          )}
 
           {isRunning && (
             <div className="flex items-center gap-3 mt-4 p-4 rounded-lg border border-[var(--border)] bg-[var(--card)]">
@@ -183,6 +265,25 @@ export default function DiscoverResultsPage() {
             )}
           </div>
         )}
+
+        {run.warnings.length > 0 && (
+          <section className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
+            <h2 className="font-semibold text-amber-700">
+              Discovery quality notes
+            </h2>
+            <p className="mt-1 text-[var(--muted)]">
+              These notes flag weak coverage or low confidence. Results are
+              relevance-ranked arXiv matches, not an exhaustive literature
+              review.
+            </p>
+            <ul className="mt-3 space-y-1 text-amber-700">
+              {run.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {run.status === "complete" && run.results.length === 0 && (
           <p className="text-[var(--muted)]">
             No relevant papers found. Try rephrasing your question.
@@ -194,11 +295,14 @@ export default function DiscoverResultsPage() {
             <h2 className="text-lg font-semibold">
               Results ({run.results.length})
             </h2>
-            {run.results.map((result) => (
-              <div
-                key={result.id}
-                className="p-5 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-3"
-              >
+            {run.results.map((result) => {
+                const ingestState = ingesting[result.id];
+
+                return (
+                  <div
+                    key={result.id}
+                    className="p-5 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-3"
+                  >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
@@ -266,11 +370,12 @@ export default function DiscoverResultsPage() {
                     >
                       View Paper
                     </button>
-                  ) : ingesting[result.id] === "loading" ? (
-                    <span className="ml-auto text-sm text-[var(--muted)]">
+                  ) : ingestState?.status === "loading" ? (
+                    <span className="ml-auto inline-flex items-center gap-2 text-sm text-[var(--muted)]">
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
                       Ingesting...
                     </span>
-                  ) : ingesting[result.id] === "error" ? (
+                  ) : ingestState?.status === "error" ? (
                     <button
                       onClick={() => handleIngest(result.id)}
                       className="ml-auto text-sm px-4 py-1.5 rounded-lg bg-red-500/10 text-red-500 font-medium"
@@ -286,8 +391,15 @@ export default function DiscoverResultsPage() {
                     </button>
                   )}
                 </div>
+
+                {ingestState?.status === "error" && (
+                  <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500">
+                    {ingestState.message || "Failed to ingest this paper."}
+                  </div>
+                )}
               </div>
-            ))}
+                );
+              })}
           </div>
         )}
       </div>

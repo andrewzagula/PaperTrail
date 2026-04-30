@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import { addPaperToCompare } from "@/lib/compare-selection";
+import { getApiErrorMessage } from "@/lib/api-errors";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -76,7 +77,9 @@ export default function PaperView() {
     async function fetchPaper() {
       try {
         const res = await fetch(`${API_URL}/papers/${paperId}`);
-        if (!res.ok) throw new Error("Paper not found");
+        if (!res.ok) {
+          throw new Error(await getApiErrorMessage(res, "Paper not found"));
+        }
         const data = await res.json();
         setPaper(data);
         if (data.sections.length > 0) {
@@ -93,7 +96,7 @@ export default function PaperView() {
   }, [paperId]);
 
   const handleAnalyze = async () => {
-    if (!paper) return;
+    if (!paper || analyzing) return;
     setAnalyzing(true);
     setAnalyzeError("");
     try {
@@ -101,8 +104,7 @@ export default function PaperView() {
         method: "POST",
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.detail || "Analysis failed");
+        throw new Error(await getApiErrorMessage(res, "Analysis failed"));
       }
       const breakdown = await res.json();
       setPaper({ ...paper, structured_breakdown: breakdown });
@@ -198,8 +200,7 @@ export default function PaperView() {
         body: JSON.stringify({ message }),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.detail || "Chat failed");
+        throw new Error(await getApiErrorMessage(res, "Chat failed"));
       }
       const data: ChatMessage = await res.json();
       setChatMessages((prev) => [...prev, data]);
@@ -235,7 +236,10 @@ export default function PaperView() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-6 h-6 border-2 border-[var(--primary)] border-t-transparent rounded-full animate-spin" />
+        <div className="text-center space-y-4">
+          <div className="mx-auto w-6 h-6 border-2 border-[var(--primary)] border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-[var(--muted)]">Loading paper workspace...</p>
+        </div>
       </div>
     );
   }
@@ -365,7 +369,7 @@ export default function PaperView() {
             </div>
           </div>
         ) : (
-          <div className="mb-8 flex items-center gap-4">
+          <div className="mb-8 flex flex-wrap items-center gap-4">
             <button
               onClick={handleAnalyze}
               disabled={analyzing}
@@ -384,19 +388,25 @@ export default function PaperView() {
           </div>
         )}
       </div>
-      <div className="flex">
-        <div className={`${chatOpen ? "w-[60%]" : "w-full max-w-5xl mx-auto"} px-8 pb-8`}>
-          <div className="flex gap-6">
-            <nav className="w-56 shrink-0 sticky top-8 self-start">
+      <div
+        className={`mx-auto flex w-full flex-col gap-6 px-8 pb-8 ${
+          chatOpen
+            ? "max-w-7xl xl:flex-row xl:items-start"
+            : "max-w-5xl"
+        }`}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-col gap-6 lg:flex-row">
+            <nav className="shrink-0 lg:sticky lg:top-8 lg:w-56 lg:self-start">
               <h3 className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wide mb-3">
                 Sections
               </h3>
-              <ul className="space-y-1">
+              <ul className="flex gap-2 overflow-x-auto pb-2 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
                 {paper.sections.map((section) => (
-                  <li key={section.id}>
+                  <li key={section.id} className="shrink-0 lg:shrink">
                     <button
                       onClick={() => scrollToSection(section.id)}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                      className={`w-full whitespace-nowrap text-left px-3 py-2 rounded-lg text-sm transition-colors lg:whitespace-normal ${
                         activeSection === section.id
                           ? "bg-[var(--primary)]/10 text-[var(--primary)] font-medium"
                           : "text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--card)]"
@@ -432,7 +442,8 @@ export default function PaperView() {
         </div>
 
         {chatOpen && (
-          <div className="w-[40%] border-l border-[var(--border)] sticky top-0 h-screen flex flex-col bg-[var(--background)]">
+          <aside className="w-full min-w-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)] xl:sticky xl:top-6 xl:h-[calc(100vh-3rem)] xl:w-[min(420px,34vw)]">
+          <div className="flex h-[min(720px,calc(100vh-3rem))] flex-col xl:h-full">
             <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
               <h3 className="font-semibold text-sm">Ask about this paper</h3>
               {chatMessages.length > 0 && (
@@ -461,7 +472,7 @@ export default function PaperView() {
                   className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                 >
                   <div
-                    className={`max-w-[85%] rounded-xl px-4 py-3 text-sm ${
+                    className={`max-w-[85%] min-w-0 break-words rounded-xl px-4 py-3 text-sm ${
                       msg.role === "user"
                         ? "bg-[var(--primary)] text-white"
                         : "bg-[var(--card)] border border-[var(--border)]"
@@ -511,7 +522,7 @@ export default function PaperView() {
             </div>
 
             <div className="p-4 border-t border-[var(--border)]">
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <input
                   type="text"
                   value={chatInput}
@@ -524,18 +535,19 @@ export default function PaperView() {
                   }}
                   placeholder="Ask a question..."
                   disabled={chatLoading}
-                  className="flex-1 px-4 py-2.5 rounded-lg border border-[var(--border)] bg-[var(--card)] text-sm focus:outline-none focus:border-[var(--primary)] disabled:opacity-50 placeholder:text-[var(--muted)]"
+                  className="min-w-0 flex-1 px-4 py-2.5 rounded-lg border border-[var(--border)] bg-[var(--card)] text-sm focus:outline-none focus:border-[var(--primary)] disabled:opacity-50 placeholder:text-[var(--muted)]"
                 />
                 <button
                   onClick={handleChatSend}
                   disabled={chatLoading || !chatInput.trim()}
-                  className="px-4 py-2.5 bg-[var(--primary)] hover:bg-[var(--primary-hover)] disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+                  className="px-4 py-2.5 bg-[var(--primary)] hover:bg-[var(--primary-hover)] disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors disabled:cursor-not-allowed"
                 >
                   Send
                 </button>
               </div>
             </div>
           </div>
+          </aside>
         )}
       </div>
     </div>
