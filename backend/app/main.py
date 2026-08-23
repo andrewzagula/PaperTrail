@@ -45,5 +45,11 @@ def health_check():
 
 
 @app.get("/health/details")
-def health_details():
-    return build_health_details()
+def health_details(probe: bool = False):
+    """Report configuration state.
+
+    Pass ?probe=true to also send one minimal request to each provider, which
+    is the only way to distinguish a working credential from a well-formed
+    one. The probe costs a few tokens, so it is opt-in.
+    """
+    return build_health_details(probe=probe)
