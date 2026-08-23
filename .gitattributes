@@ -1,0 +1,25 @@
+# Normalise line endings so Windows and macOS/Linux clones agree.
+# Text files are stored as LF in the repository and checked out with the
+# platform's native endings.
+* text=auto
+
+# Files that must stay LF regardless of platform.
+*.sh text eol=lf
+*.py text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+.env.example text eol=lf
+
+# Binary files git must not touch.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.db binary
