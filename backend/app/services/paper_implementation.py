@@ -1,5 +1,6 @@
 import ast
 import json
+import re
 import uuid
 from typing import Any
 
@@ -666,7 +667,11 @@ def _implementation_graph_review_scaffold(
     unsafe_feedback = [
         {"path": file.get("path") or "starter code file", "reasons": reasons}
         for file in starter_code
-        if (reasons := _unsafe_starter_code_reasons(file.get("content", "")))
+        if (
+            reasons := _unsafe_starter_code_reasons(
+                file.get("content", ""), path=file.get("path") or ""
+            )
+        )
     ]
 
     if not algorithm_steps:
@@ -2121,7 +2126,9 @@ def _review_starter_code_deterministically(
     warnings = []
 
     for file in starter_code:
-        reasons = _unsafe_starter_code_reasons(file.get("content", ""))
+        reasons = _unsafe_starter_code_reasons(
+            file.get("content", ""), path=file.get("path") or ""
+        )
         if reasons:
             reviewed_files.append(
                 _safe_replacement_starter_file(file, reasons, assumptions_and_gaps)
@@ -2135,61 +2142,105 @@ def _review_starter_code_deterministically(
     return reviewed_files, _dedupe_strings(warnings)
 
 
-def _unsafe_starter_code_reasons(content: str) -> list[str]:
-    normalized = content.lower()
-    pattern_groups = (
+DOCUMENTATION_SUFFIXES = (".md", ".txt", ".rst")
+
+# Groups skipped for documentation files. Setup instructions are expected to
+# name download commands, and prose routinely names model providers; neither
+# is executable, and stripping a README over them loses the one file that
+# explains what the reader has to supply.
+DOCUMENTATION_EXEMPT_GROUPS = ("dataset downloads", "API key or provider usage")
+
+# (?<![\w.]) keeps attribute access out of the match, so model.eval() and
+# mp.spawn() are not mistaken for bare eval() and spawn().
+_UNSAFE_PATTERN_GROUPS = (
+    (
+        "network calls",
         (
-            "network calls",
-            (
-                "requests.",
-                "urllib.",
-                "httpx.",
-                "aiohttp.",
-                "socket.",
-                "urlopen(",
-                "urlretrieve(",
-            ),
+            r"requests\.(get|post|put|delete|head|session)",
+            r"urllib\.",
+            r"httpx\.",
+            r"aiohttp\.",
+            r"socket\.(socket|connect|create_connection)",
+            r"urlopen\s*\(",
+            r"urlretrieve\s*\(",
         ),
+    ),
+    (
+        "dataset downloads",
         (
-            "dataset downloads",
-            (
-                "load_dataset(",
-                ".download(",
-                "download_url(",
-                "download_and_extract",
-                "wget ",
-                "curl ",
-            ),
+            r"load_dataset\s*\(",
+            r"\.download\s*\(",
+            r"download_url\s*\(",
+            r"download_and_extract",
+            r"wget\s",
+            r"curl\s",
         ),
+    ),
+    (
+        "shell or process execution",
         (
-            "shell or process execution",
-            (
-                "subprocess",
-                "os.system(",
-                "os.popen(",
-                "popen(",
-                "spawn(",
-            ),
+            r"subprocess",
+            r"os\.system\s*\(",
+            r"os\.popen\s*\(",
+            r"(?<![\w.])popen\s*\(",
+            r"(?<![\w.])spawn\s*\(",
         ),
-        ("dynamic code execution", ("eval(", "exec(")),
+    ),
+    (
+        "dynamic code execution",
         (
-            "API key or provider usage",
-            (
-                "api_key",
-                "apikey",
-                "secret_key",
-                "openai",
-                "anthropic",
-                "google.generativeai",
-                "gemini",
-                "llm_provider",
-            ),
+            r"(?<![\w.])eval\s*\(",
+            r"(?<![\w.])exec\s*\(",
         ),
+    ),
+    (
+        "API key or provider usage",
+        (
+            r"api_?key\s*=",
+            r"secret_key\s*=",
+            r"(?:^|\n)\s*(?:import|from)\s+openai",
+            r"(?<![\w.])openai\.",
+            r"(?:^|\n)\s*(?:import|from)\s+anthropic",
+            r"(?<![\w.])anthropic\.",
+            r"google\.generativeai",
+            r"generativeai",
+            r"(?<![\w.])genai\.",
+            r"llm_provider",
+        ),
+    ),
+)
+
+
+def _is_documentation_path(path: str) -> bool:
+    return path.strip().lower().endswith(DOCUMENTATION_SUFFIXES)
+
+
+def _strip_full_line_comments(content: str) -> str:
+    """Drop whole-line # comments before scanning.
+
+    A commented-out call cannot run, so ignoring these removes a large class
+    of false positives (TODO notes naming load_dataset, socket, or spawn)
+    without weakening detection of anything executable. Trailing comments on
+    a code line are left alone so the code half is still scanned.
+    """
+    return "\n".join(
+        line
+        for line in content.splitlines()
+        if not line.lstrip().startswith("#")
     )
 
+
+def _unsafe_starter_code_reasons(content: str, *, path: str = "") -> list[str]:
+    is_documentation = _is_documentation_path(path)
+    normalized = content.lower()
+    if not is_documentation:
+        normalized = _strip_full_line_comments(normalized)
+
     reasons = []
-    for label, tokens in pattern_groups:
-        if any(token in normalized for token in tokens):
+    for label, patterns in _UNSAFE_PATTERN_GROUPS:
+        if is_documentation and label in DOCUMENTATION_EXEMPT_GROUPS:
+            continue
+        if any(re.search(pattern, normalized) for pattern in patterns):
             reasons.append(label)
     return reasons
 
