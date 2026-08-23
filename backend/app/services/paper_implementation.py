@@ -65,6 +65,7 @@ MAX_STARTER_CODE_FILES = 4
 MIN_STARTER_CODE_FILES = 2
 MAX_STARTER_FILE_CHARS = 12000
 MAX_STARTER_CODE_TOTAL_CHARS = 30000
+MAX_STARTER_CODE_ATTEMPTS = 2
 MIN_USABLE_ALGORITHM_STEPS = 2
 SUPPORTED_TARGET_LANGUAGES = ("python",)
 SUPPORTED_TARGET_FRAMEWORKS = ("pytorch", "generic-python")
@@ -260,6 +261,9 @@ def generate_paper_implementation(
             generate_starter_code=_implementation_graph_generate_starter_code,
             review_scaffold=_implementation_graph_review_scaffold,
             build_response=_implementation_graph_build_response,
+            should_regenerate_starter_code=(
+                _implementation_graph_should_regenerate_starter_code
+            ),
         )
     )
     result = graph.invoke({
@@ -558,6 +562,8 @@ def _implementation_graph_generate_starter_code(
     assumptions_and_gaps = state.get("assumptions_and_gaps") or []
     pseudocode = state.get("pseudocode") or ""
     warnings = list(state.get("warnings") or [])
+    attempt = state.get("code_generation_attempts", 0) + 1
+    unsafe_feedback = state.get("unsafe_code_feedback") or []
 
     fallback_payload = _build_deterministic_starter_code_payload(
         implementation_context=implementation_context,
@@ -571,6 +577,8 @@ def _implementation_graph_generate_starter_code(
     if not algorithm_steps:
         return {
             **fallback_payload,
+            "code_generation_attempts": attempt,
+            "used_deterministic_starter_code": True,
             "warnings": _dedupe_strings([
                 *warnings,
                 NO_ALGORITHM_STEPS_WARNING,
@@ -586,6 +594,7 @@ def _implementation_graph_generate_starter_code(
             focus=state.get("focus"),
             target_language=state["target_language"],
             target_framework=state["target_framework"],
+            unsafe_feedback=unsafe_feedback,
         )
         starter_code, normalization_warnings = _normalize_starter_code_files(
             payload.get("starter_code"),
@@ -593,8 +602,10 @@ def _implementation_graph_generate_starter_code(
             assumptions_and_gaps,
             target_framework=state["target_framework"],
         )
+        used_deterministic = False
         if not starter_code:
             starter_code = fallback_payload["starter_code"]
+            used_deterministic = True
             normalization_warnings.append(
                 IMPLEMENTATION_CODE_NORMALIZATION_FALLBACK_WARNING
             )
@@ -613,6 +624,7 @@ def _implementation_graph_generate_starter_code(
             starter_code = fallback_payload["starter_code"]
             setup_notes = fallback_payload["setup_notes"]
             test_plan = fallback_payload["test_plan"]
+            used_deterministic = True
             normalization_warnings.append(IMPLEMENTATION_CODE_FRAMEWORK_FALLBACK_WARNING)
         warnings.extend(_normalize_string_list(payload.get("warnings")))
         warnings.extend(normalization_warnings)
@@ -620,9 +632,12 @@ def _implementation_graph_generate_starter_code(
         starter_code = fallback_payload["starter_code"]
         setup_notes = fallback_payload["setup_notes"]
         test_plan = fallback_payload["test_plan"]
+        used_deterministic = True
         warnings.append(IMPLEMENTATION_CODE_FALLBACK_WARNING)
 
     return {
+        "code_generation_attempts": attempt,
+        "used_deterministic_starter_code": used_deterministic,
         "starter_code": starter_code,
         "setup_notes": setup_notes,
         "test_plan": test_plan,
@@ -633,9 +648,18 @@ def _implementation_graph_generate_starter_code(
 def _implementation_graph_review_scaffold(
     state: ImplementationGraphState,
 ) -> ImplementationGraphState:
-    warnings = list(state.get("warnings") or [])
+    # Review findings are recomputed on every pass, so they are kept out of the
+    # accumulated warnings until build_response. A rejected pass must not leave
+    # "file was replaced" notes attached to a later clean regeneration.
+    warnings: list[str] = []
     algorithm_steps = state.get("algorithm_steps") or []
     starter_code = state.get("starter_code") or []
+
+    unsafe_feedback = [
+        {"path": file.get("path") or "starter code file", "reasons": reasons}
+        for file in starter_code
+        if (reasons := _unsafe_starter_code_reasons(file.get("content", "")))
+    ]
 
     if not algorithm_steps:
         warnings.append(NO_ALGORITHM_STEPS_WARNING)
@@ -665,8 +689,30 @@ def _implementation_graph_review_scaffold(
 
     return {
         "starter_code": reviewed_code,
-        "warnings": _dedupe_strings(warnings),
+        "unsafe_code_feedback": unsafe_feedback,
+        "review_warnings": _dedupe_strings(warnings),
     }
+
+
+def _implementation_graph_should_regenerate_starter_code(
+    state: ImplementationGraphState,
+) -> bool:
+    """Whether the safety review rejected enough code to ask the model again.
+
+    When generated starter code reaches out to the network, downloads data, or
+    shells out, the review strips it and substitutes an inert placeholder. That
+    silently costs the caller the working code they asked for. One more pass,
+    told exactly which paths failed and why, usually returns something usable.
+    Deterministic scaffolds are never regenerated: they are templates and are
+    already safe by construction.
+    """
+    if not state.get("unsafe_code_feedback"):
+        return False
+    if state.get("used_deterministic_starter_code", False):
+        return False
+
+    attempts = state.get("code_generation_attempts", 0)
+    return 1 <= attempts < MAX_STARTER_CODE_ATTEMPTS
 
 
 def _implementation_graph_build_response(
@@ -700,7 +746,10 @@ def _implementation_graph_build_response(
                 "TODO against the original paper before coding."
             )
         ],
-        "warnings": _dedupe_strings(state.get("warnings") or []),
+        "warnings": _dedupe_strings([
+            *(state.get("warnings") or []),
+            *(state.get("review_warnings") or []),
+        ]),
     }
 
 
@@ -868,6 +917,23 @@ def generate_implementation_pseudocode(
     )
 
 
+def _build_unsafe_code_correction(unsafe_feedback: list[dict[str, Any]]) -> str:
+    if not unsafe_feedback:
+        return ""
+
+    rejected = "; ".join(
+        f"{entry.get('path')} ({', '.join(entry.get('reasons') or [])})"
+        for entry in unsafe_feedback
+    )
+    return (
+        "\n\nA previous attempt was rejected by the safety review and had to be "
+        f"discarded. Rejected files: {rejected}. Regenerate those files without the "
+        "flagged behaviour, keeping the same purpose. Replace anything that would "
+        "need network access, downloads, or shell execution with a TODO comment "
+        "describing what the reader must supply."
+    )
+
+
 def generate_implementation_starter_code(
     implementation_context: dict[str, Any],
     algorithm_steps: list[dict[str, Any]],
@@ -876,11 +942,13 @@ def generate_implementation_starter_code(
     focus: str | None,
     target_language: str,
     target_framework: str,
+    unsafe_feedback: list[dict[str, Any]] | None = None,
 ) -> dict:
     context_json = json.dumps(implementation_context, ensure_ascii=True)
     steps_json = json.dumps(algorithm_steps, ensure_ascii=True)
     gaps_json = json.dumps(assumptions_and_gaps, ensure_ascii=True)
     focus_text = focus or "No user focus provided."
+    correction = _build_unsafe_code_correction(unsafe_feedback or [])
 
     return get_structured_client().generate_structured(
         messages=[
@@ -897,6 +965,7 @@ def generate_implementation_starter_code(
                     "files or run code. Put TODO comments anywhere the paper omits "
                     "equations, architecture details, hyperparameters, datasets, metrics, "
                     "or environment requirements."
+                    + correction
                 ),
             },
             {
