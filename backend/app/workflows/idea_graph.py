@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -23,9 +23,19 @@ class IdeaGraphState(TypedDict, total=False):
     candidate_ideas: list[dict[str, Any]]
     ideas: list[dict[str, Any]]
     warnings: list[str]
+    # Retry bookkeeping. generation_attempts counts completed candidate
+    # generation passes; used_deterministic_candidates records whether the
+    # last pass fell back to templates, which are not worth regenerating.
+    generation_attempts: int
+    used_deterministic_candidates: bool
 
 
 IdeaGraphNode = Callable[[IdeaGraphState], IdeaGraphState]
+IdeaGraphDecision = Callable[[IdeaGraphState], bool]
+
+
+def _never_retry(state: IdeaGraphState) -> bool:
+    return False
 
 
 @dataclass(frozen=True)
@@ -36,6 +46,10 @@ class IdeaGraphNodes:
     generate_candidates: IdeaGraphNode
     critique_and_filter: IdeaGraphNode
     build_response: IdeaGraphNode
+    # Decides whether too few ideas survived critique to accept the result.
+    # Defaults to a straight-through run so callers that do not supply a
+    # policy keep the original linear behaviour.
+    should_retry_candidates: IdeaGraphDecision = field(default=_never_retry)
 
 
 def build_idea_graph(nodes: IdeaGraphNodes) -> CompiledStateGraph:
@@ -53,7 +67,15 @@ def build_idea_graph(nodes: IdeaGraphNodes) -> CompiledStateGraph:
     graph.add_edge("ensure_breakdowns", "normalize_context")
     graph.add_edge("normalize_context", "generate_candidates")
     graph.add_edge("generate_candidates", "critique_and_filter")
-    graph.add_edge("critique_and_filter", "build_response")
+
+    # Loop back for another candidate pass when critique left too few ideas,
+    # instead of returning a thin result on a single unlucky generation.
+    graph.add_conditional_edges(
+        "critique_and_filter",
+        lambda state: "retry" if nodes.should_retry_candidates(state) else "accept",
+        {"retry": "generate_candidates", "accept": "build_response"},
+    )
+
     graph.add_edge("build_response", END)
 
     return graph.compile()

@@ -27,6 +27,7 @@ INSUFFICIENT_FINAL_IDEAS_WARNING = (
     "Idea filtering returned fewer than 3 usable ideas."
 )
 MAX_IDEA_SOURCE_PAPERS = 5
+MAX_CANDIDATE_GENERATION_ATTEMPTS = 2
 MIN_CANDIDATE_IDEAS = 6
 MAX_CANDIDATE_IDEAS = 8
 MIN_FINAL_IDEAS = 3
@@ -154,6 +155,7 @@ def generate_paper_ideas(
             generate_candidates=_idea_graph_generate_candidates,
             critique_and_filter=_idea_graph_critique_and_filter,
             build_response=_idea_graph_build_response,
+            should_retry_candidates=_idea_graph_should_retry_candidates,
         )
     )
     result = graph.invoke({
@@ -304,8 +306,10 @@ def _idea_graph_normalize_context(state: IdeaGraphState) -> IdeaGraphState:
 
 def _idea_graph_generate_candidates(state: IdeaGraphState) -> IdeaGraphState:
     idea_context = state["idea_context"]
+    attempt = state.get("generation_attempts", 0) + 1
+    used_deterministic = False
     try:
-        payload = generate_candidate_ideas(idea_context)
+        payload = generate_candidate_ideas(idea_context, attempt=attempt)
         candidate_ideas = _normalize_idea_list(
             payload.get("candidates"),
             idea_context,
@@ -320,8 +324,11 @@ def _idea_graph_generate_candidates(state: IdeaGraphState) -> IdeaGraphState:
 
         candidate_ideas = _build_deterministic_candidate_ideas(idea_context)
         payload_warnings = [CANDIDATE_GENERATION_FALLBACK_WARNING]
+        used_deterministic = True
 
     return {
+        "generation_attempts": attempt,
+        "used_deterministic_candidates": used_deterministic,
         "candidate_ideas": candidate_ideas[:MAX_CANDIDATE_IDEAS],
         "warnings": _dedupe_strings([
             *state.get("warnings", []),
@@ -345,9 +352,6 @@ def _idea_graph_critique_and_filter(state: IdeaGraphState) -> IdeaGraphState:
         ideas = candidate_ideas[:MAX_FINAL_IDEAS]
         payload_warnings = [CRITIQUE_FALLBACK_WARNING]
 
-    if len(ideas) < MIN_FINAL_IDEAS:
-        payload_warnings.append(INSUFFICIENT_FINAL_IDEAS_WARNING)
-
     return {
         "ideas": ideas[:MAX_FINAL_IDEAS],
         "warnings": _dedupe_strings([
@@ -357,10 +361,32 @@ def _idea_graph_critique_and_filter(state: IdeaGraphState) -> IdeaGraphState:
     }
 
 
+def _idea_graph_should_retry_candidates(state: IdeaGraphState) -> bool:
+    """Whether another candidate pass is worth attempting.
+
+    Critique can reject most of a weak generation, leaving fewer ideas than
+    the caller asked for. One more pass is usually enough to recover, so
+    retry rather than returning a thin result. Deterministic candidates are
+    never retried: they are templates and would regenerate identically.
+    """
+    if len(state.get("ideas", [])) >= MIN_FINAL_IDEAS:
+        return False
+    if state.get("used_deterministic_candidates", False):
+        return False
+
+    attempts = state.get("generation_attempts", 0)
+    return 1 <= attempts < MAX_CANDIDATE_GENERATION_ATTEMPTS
+
+
 def _idea_graph_build_response(state: IdeaGraphState) -> IdeaGraphState:
+    ideas = state.get("ideas", [])[:MAX_FINAL_IDEAS]
+    warnings = list(state.get("warnings", []))
+    if len(ideas) < MIN_FINAL_IDEAS:
+        warnings.append(INSUFFICIENT_FINAL_IDEAS_WARNING)
+
     return {
-        "ideas": state.get("ideas", [])[:MAX_FINAL_IDEAS],
-        "warnings": _dedupe_strings(state.get("warnings", [])),
+        "ideas": ideas,
+        "warnings": _dedupe_strings(warnings),
     }
 
 
@@ -404,8 +430,22 @@ def ensure_structured_breakdown(
     return normalized_breakdown, []
 
 
-def generate_candidate_ideas(idea_context: dict[str, Any]) -> dict:
+def generate_candidate_ideas(
+    idea_context: dict[str, Any],
+    *,
+    attempt: int = 1,
+) -> dict:
     context_json = json.dumps(idea_context, ensure_ascii=True)
+    retry_directive = (
+        ""
+        if attempt <= 1
+        else (
+            "\n\nA previous attempt produced too few candidates that survived "
+            "critique. Make each candidate more specific and more clearly grounded "
+            "in the supplied context, and keep the candidates distinct from one "
+            "another."
+        )
+    )
     return _request_structured_json(
         model=settings.idea_generation_model,
         temperature=0.4,
@@ -423,6 +463,7 @@ def generate_candidate_ideas(idea_context: dict[str, Any]) -> dict:
                     "for each transformation type: combine, ablate, extend, and apply. "
                     "Each evidence_basis item must name a source paper, source section, or the "
                     "user topic. Put missing evidence or uncertainty in warnings."
+                    + retry_directive
                 ),
             },
             {
