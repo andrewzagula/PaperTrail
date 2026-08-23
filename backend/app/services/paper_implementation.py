@@ -56,6 +56,10 @@ INSUFFICIENT_ALGORITHM_STEPS_WARNING = (
 NO_ALGORITHM_STEPS_WARNING = (
     "No grounded algorithm steps could be extracted from the available paper context."
 )
+WIDENED_METHOD_CONTEXT_WARNING = (
+    "No method section could be identified by title, so the most substantial "
+    "sections were used as implementation context instead."
+)
 MAX_IMPLEMENTATION_FOCUS_CHARS = 1000
 MAX_SOURCE_SECTIONS = 8
 MAX_SECTION_PREVIEW_CHARS = 1200
@@ -264,6 +268,8 @@ def generate_paper_implementation(
             should_regenerate_starter_code=(
                 _implementation_graph_should_regenerate_starter_code
             ),
+            widen_context=_implementation_graph_widen_context,
+            should_widen_context=_implementation_graph_should_widen_context,
         )
     )
     result = graph.invoke({
@@ -383,10 +389,12 @@ def _implementation_graph_prepare_context(
     warnings.extend(breakdown_warnings)
     if not sections:
         warnings.append(NO_PARSED_SECTIONS_WARNING)
-    if _has_sparse_method_context(selected_sections, breakdown):
+    sparse_method_context = _has_sparse_method_context(selected_sections, breakdown)
+    if sparse_method_context:
         warnings.append(SPARSE_METHOD_CONTEXT_WARNING)
 
     return {
+        "sparse_method_context": sparse_method_context,
         "sections": sections,
         "source_sections": source_sections,
         "breakdown": breakdown,
@@ -1107,6 +1115,66 @@ def _build_implementation_context(
         "structured_breakdown": breakdown,
         "relevant_sections": relevant_sections,
     }
+
+
+def _select_substantive_sections(
+    sections: list[PaperSection],
+) -> list[PaperSection]:
+    """Pick sections by weight of content rather than by title.
+
+    Used when title matching finds no method section. The method is usually
+    still present, just under a heading the keyword list does not recognise
+    (or one the PDF parser mangled), so the longest sections are the best
+    available proxy. Reading order is restored afterwards so the context still
+    reads like the paper.
+    """
+    with_content = [
+        section for section in sections if str(section.content or "").strip()
+    ]
+    if not with_content:
+        return []
+
+    heaviest = sorted(
+        with_content,
+        key=lambda section: len(section.content or ""),
+        reverse=True,
+    )[:MAX_SOURCE_SECTIONS]
+
+    return sorted(heaviest, key=lambda section: section.section_order)
+
+
+def _implementation_graph_widen_context(
+    state: ImplementationGraphState,
+) -> ImplementationGraphState:
+    sections = state.get("sections") or []
+    widened = _select_substantive_sections(sections)
+    if not widened:
+        return {"widened_context": True}
+
+    return {
+        "widened_context": True,
+        "source_sections": [
+            _serialize_source_section(section) for section in widened
+        ],
+        "implementation_context": _build_implementation_context(
+            paper=state["paper"],
+            breakdown=state.get("breakdown") or {},
+            selected_sections=widened,
+        ),
+        "warnings": _dedupe_strings([
+            *(state.get("warnings") or []),
+            WIDENED_METHOD_CONTEXT_WARNING,
+        ]),
+    }
+
+
+def _implementation_graph_should_widen_context(
+    state: ImplementationGraphState,
+) -> bool:
+    """Whether to rebuild context with the title-independent strategy."""
+    if not state.get("sparse_method_context"):
+        return False
+    return not state.get("widened_context", False)
 
 
 def _has_sparse_method_context(

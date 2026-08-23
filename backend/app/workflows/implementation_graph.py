@@ -37,6 +37,10 @@ class ImplementationGraphState(TypedDict, total=False):
     used_deterministic_starter_code: bool
     unsafe_code_feedback: list[dict[str, Any]]
     review_warnings: list[str]
+    # Set when the paper exposes no recognisable method section, which routes
+    # context preparation through a broader, title-independent selection.
+    sparse_method_context: bool
+    widened_context: bool
 
 
 ImplementationGraphNode = Callable[[ImplementationGraphState], ImplementationGraphState]
@@ -45,6 +49,14 @@ ImplementationGraphDecision = Callable[[ImplementationGraphState], bool]
 
 def _never_regenerate(state: ImplementationGraphState) -> bool:
     return False
+
+
+def _never_widen(state: ImplementationGraphState) -> bool:
+    return False
+
+
+def _passthrough(state: ImplementationGraphState) -> ImplementationGraphState:
+    return {}
 
 
 @dataclass(frozen=True)
@@ -62,6 +74,10 @@ class ImplementationGraphNodes:
     should_regenerate_starter_code: ImplementationGraphDecision = field(
         default=_never_regenerate
     )
+    # Alternative context strategy for papers whose method section cannot be
+    # located by title. Skipped entirely on the normal path.
+    widen_context: ImplementationGraphNode = field(default=_passthrough)
+    should_widen_context: ImplementationGraphDecision = field(default=_never_widen)
 
 
 def build_implementation_graph(
@@ -76,11 +92,20 @@ def build_implementation_graph(
     graph.add_node("generate_pseudocode", nodes.generate_pseudocode)
     graph.add_node("generate_starter_code", nodes.generate_starter_code)
     graph.add_node("review_scaffold", nodes.review_scaffold)
+    graph.add_node("widen_context", nodes.widen_context)
     graph.add_node("build_response", nodes.build_response)
 
     graph.set_entry_point("load_paper")
     graph.add_edge("load_paper", "prepare_context")
-    graph.add_edge("prepare_context", "extract_algorithm")
+    # Papers with no recognisable method section get a broader context pass
+    # before extraction, rather than running the method-focused path over
+    # material that is not there.
+    graph.add_conditional_edges(
+        "prepare_context",
+        lambda state: "widen" if nodes.should_widen_context(state) else "extract",
+        {"widen": "widen_context", "extract": "extract_algorithm"},
+    )
+    graph.add_edge("widen_context", "extract_algorithm")
     graph.add_edge("extract_algorithm", "analyze_gaps")
     graph.add_edge("analyze_gaps", "generate_pseudocode")
     graph.add_edge("generate_pseudocode", "generate_starter_code")
