@@ -5,12 +5,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.models import DiscoveryRun, Paper, SavedItem, User
+from app.models.models import DiscoveryRun, Paper, SavedItem
 from app.services.paper_embeddings import get_paper_embedding_status_map
+from app.services.users import get_or_create_default_user
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
 
-DEFAULT_USER_EMAIL = "local@papertrail.dev"
 RECENT_WORKSPACE_LIMIT = 5
 SUPPORTED_SAVED_ITEM_TYPES = {"comparison", "idea", "implementation"}
 
@@ -76,16 +76,6 @@ class WorkspaceSummaryResponse(BaseModel):
 
 class RenameSavedItemRequest(BaseModel):
     title: str
-
-
-def _get_or_create_default_user(db: Session) -> User:
-    user = db.query(User).filter(User.email == DEFAULT_USER_EMAIL).first()
-    if not user:
-        user = User(email=DEFAULT_USER_EMAIL, name="Local User")
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    return user
 
 
 def _parse_saved_item_id(item_id: str) -> uuid.UUID:
@@ -229,7 +219,7 @@ def _discovery_run_to_response(run: DiscoveryRun) -> WorkspaceDiscoveryRunRespon
 
 @router.get("/summary", response_model=WorkspaceSummaryResponse)
 def get_workspace_summary(db: Session = Depends(get_db)):
-    user = _get_or_create_default_user(db)
+    user = get_or_create_default_user(db)
 
     saved_items_query = db.query(SavedItem).filter(SavedItem.user_id == user.id)
     counts = WorkspaceCountsResponse(
@@ -297,7 +287,7 @@ def list_workspace_saved_items(
     item_type: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    user = _get_or_create_default_user(db)
+    user = get_or_create_default_user(db)
     normalized_item_type = _validate_saved_item_type(item_type)
 
     query = db.query(SavedItem).filter(SavedItem.user_id == user.id)
@@ -317,7 +307,7 @@ def list_workspace_saved_items(
     response_model=WorkspaceSavedItemDetailResponse,
 )
 def get_workspace_saved_item(item_id: str, db: Session = Depends(get_db)):
-    user = _get_or_create_default_user(db)
+    user = get_or_create_default_user(db)
     saved_item = _get_saved_item_for_user(db, user.id, item_id)
     source_paper_map = _load_source_papers(db, user.id, [saved_item])
     return _saved_item_to_detail_response(saved_item, source_paper_map)
@@ -332,7 +322,7 @@ def rename_workspace_saved_item(
     req: RenameSavedItemRequest,
     db: Session = Depends(get_db),
 ):
-    user = _get_or_create_default_user(db)
+    user = get_or_create_default_user(db)
     saved_item = _get_saved_item_for_user(db, user.id, item_id)
     saved_item.title = _normalize_saved_item_title(req.title)
     db.commit()
@@ -344,7 +334,7 @@ def rename_workspace_saved_item(
 
 @router.delete("/saved-items/{item_id}")
 def delete_workspace_saved_item(item_id: str, db: Session = Depends(get_db)):
-    user = _get_or_create_default_user(db)
+    user = get_or_create_default_user(db)
     saved_item = _get_saved_item_for_user(db, user.id, item_id)
     saved_item_id = str(saved_item.id)
 

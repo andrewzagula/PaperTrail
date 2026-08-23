@@ -7,16 +7,16 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.llm import get_provider_error_response
-from app.models.models import SavedItem, User
+from app.models.models import SavedItem
 from app.services.paper_compare import (
     compare_papers,
     load_papers_for_user,
     validate_compare_paper_ids,
 )
+from app.services.users import get_or_create_default_user
 
 router = APIRouter(prefix="/papers", tags=["compare"])
 
-DEFAULT_USER_EMAIL = "local@papertrail.dev"
 
 
 class CompareRequest(BaseModel):
@@ -83,22 +83,12 @@ class SaveComparisonResponse(BaseModel):
     created_at: str
 
 
-def _get_or_create_default_user(db: Session) -> User:
-    user = db.query(User).filter(User.email == DEFAULT_USER_EMAIL).first()
-    if not user:
-        user = User(email=DEFAULT_USER_EMAIL, name="Local User")
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    return user
-
-
 @router.post("/compare", response_model=CompareResponse)
 def compare_papers_endpoint(
     req: CompareRequest,
     db: Session = Depends(get_db),
 ):
-    user = _get_or_create_default_user(db)
+    user = get_or_create_default_user(db)
     try:
         return compare_papers(
             db=db,
@@ -142,7 +132,7 @@ def save_comparison_endpoint(
     req: SaveComparisonRequest,
     db: Session = Depends(get_db),
 ):
-    user = _get_or_create_default_user(db)
+    user = get_or_create_default_user(db)
     normalized_title = _normalize_comparison_title(req.title)
     normalized_ids = validate_compare_paper_ids(req.paper_ids)
     papers = load_papers_for_user(db, uuid.UUID(str(user.id)), normalized_ids)

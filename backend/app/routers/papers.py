@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.llm import get_provider_error_response
-from app.models.models import Chat, Paper, PaperSection, User
+from app.models.models import Chat, Paper, PaperSection
 from app.services.arxiv_fetcher import (
     download_arxiv_pdf,
     extract_arxiv_id,
@@ -23,6 +23,7 @@ from app.services.paper_embeddings import (
 )
 from app.services.pdf_parser import extract_metadata, extract_text
 from app.services.section_splitter import split_into_sections
+from app.services.users import get_or_create_default_user
 from app.services.vector_store import delete_by_paper
 
 router = APIRouter(prefix="/papers", tags=["papers"])
@@ -30,7 +31,6 @@ router = APIRouter(prefix="/papers", tags=["papers"])
 PDF_DIR = settings.data_dir / "pdfs"
 PDF_DIR.mkdir(exist_ok=True)
 
-DEFAULT_USER_EMAIL = "local@papertrail.dev"
 PDF_TEXT_EXTRACTION_DETAIL = "Could not extract text from PDF."
 
 
@@ -113,16 +113,6 @@ class ReembedPaperResponse(PaperEmbeddingMetadata):
 
     class Config:
         from_attributes = True
-
-def _get_or_create_default_user(db: Session) -> User:
-    user = db.query(User).filter(User.email == DEFAULT_USER_EMAIL).first()
-    if not user:
-        user = User(email=DEFAULT_USER_EMAIL, name="Local User")
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    return user
-
 
 def _serialize_sections_for_embedding(sections: list[PaperSection]) -> list[dict]:
     return [
@@ -242,7 +232,7 @@ async def ingest_arxiv(req: IngestArxivRequest, db: Session = Depends(get_db)):
     if not arxiv_id:
         raise HTTPException(status_code=400, detail="Invalid arXiv URL or ID")
 
-    user = _get_or_create_default_user(db)
+    user = get_or_create_default_user(db)
 
     try:
         metadata = await fetch_arxiv_metadata(arxiv_id)
@@ -285,7 +275,7 @@ async def ingest_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="File must be a PDF")
 
-    user = _get_or_create_default_user(db)
+    user = get_or_create_default_user(db)
 
     pdf_path = PDF_DIR / f"{uuid.uuid4()}.pdf"
     content = await file.read()
@@ -339,7 +329,7 @@ async def ingest_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)
 
 @router.post("/reembed")
 def bulk_reembed_papers(req: ReembedRequest, db: Session = Depends(get_db)):
-    user = _get_or_create_default_user(db)
+    user = get_or_create_default_user(db)
     paper_query = (
         db.query(Paper)
         .filter(Paper.user_id == user.id)
@@ -398,7 +388,7 @@ def bulk_reembed_papers(req: ReembedRequest, db: Session = Depends(get_db)):
 
 @router.get("/", response_model=list[PaperListItem])
 def list_papers(db: Session = Depends(get_db)):
-    user = _get_or_create_default_user(db)
+    user = get_or_create_default_user(db)
     papers = (
         db.query(Paper)
         .filter(Paper.user_id == user.id)
@@ -567,7 +557,7 @@ def chat_with_paper(paper_id: str, req: ChatRequest, db: Session = Depends(get_d
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
 
-    user = _get_or_create_default_user(db)
+    user = get_or_create_default_user(db)
 
     user_msg = Chat(
         user_id=user.id,

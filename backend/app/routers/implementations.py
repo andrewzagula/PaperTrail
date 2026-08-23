@@ -7,16 +7,16 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.llm import get_provider_error_response
-from app.models.models import SavedItem, User
+from app.models.models import SavedItem
 from app.services.paper_implementation import (
     generate_paper_implementation,
     load_implementation_paper_for_user,
     validate_implementation_paper_id,
 )
+from app.services.users import get_or_create_default_user
 
 router = APIRouter(prefix="/papers", tags=["implementations"])
 
-DEFAULT_USER_EMAIL = "local@papertrail.dev"
 
 
 class ImplementationRequest(BaseModel):
@@ -89,16 +89,6 @@ class SaveImplementationResponse(BaseModel):
     created_at: str
 
 
-def _get_or_create_default_user(db: Session) -> User:
-    user = db.query(User).filter(User.email == DEFAULT_USER_EMAIL).first()
-    if not user:
-        user = User(email=DEFAULT_USER_EMAIL, name="Local User")
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    return user
-
-
 def _normalize_implementation_title(title: str) -> str:
     normalized_title = title.strip()
     if not normalized_title:
@@ -135,7 +125,7 @@ def generate_implementation_endpoint(
     req: ImplementationRequest,
     db: Session = Depends(get_db),
 ):
-    user = _get_or_create_default_user(db)
+    user = get_or_create_default_user(db)
     try:
         return generate_paper_implementation(
             db=db,
@@ -159,7 +149,7 @@ def save_implementation_endpoint(
     req: SaveImplementationRequest,
     db: Session = Depends(get_db),
 ):
-    user = _get_or_create_default_user(db)
+    user = get_or_create_default_user(db)
     normalized_paper_id = validate_implementation_paper_id(paper_id)
     paper = load_implementation_paper_for_user(
         db,

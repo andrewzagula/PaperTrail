@@ -6,16 +6,16 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.llm import get_provider_error_response
-from app.models.models import DiscoveryResult, DiscoveryRun, Paper, PaperSection, User
+from app.models.models import DiscoveryResult, DiscoveryRun, Paper, PaperSection
 from app.services.arxiv_fetcher import download_arxiv_pdf, fetch_arxiv_metadata
 from app.services.errors import UserSafeServiceError
 from app.services.paper_embeddings import sync_paper_embeddings
 from app.services.pdf_parser import extract_text
 from app.services.section_splitter import split_into_sections
+from app.services.users import get_or_create_default_user
 
 router = APIRouter(prefix="/discover", tags=["discovery"])
 
-DEFAULT_USER_EMAIL = "local@papertrail.dev"
 PDF_TEXT_EXTRACTION_DETAIL = "Could not extract text from PDF."
 
 
@@ -64,16 +64,6 @@ class DiscoveryRunListItem(BaseModel):
 
     class Config:
         from_attributes = True
-
-def _get_or_create_default_user(db: Session) -> User:
-    user = db.query(User).filter(User.email == DEFAULT_USER_EMAIL).first()
-    if not user:
-        user = User(email=DEFAULT_USER_EMAIL, name="Local User")
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    return user
-
 
 def _raise_user_safe_http_error(error: UserSafeServiceError):
     raise HTTPException(status_code=error.status_code, detail=error.detail) from error
@@ -181,7 +171,7 @@ async def start_discovery(
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
-    user = _get_or_create_default_user(db)
+    user = get_or_create_default_user(db)
 
     run = DiscoveryRun(
         user_id=user.id,
@@ -201,7 +191,7 @@ async def start_discovery(
 
 @router.get("/", response_model=list[DiscoveryRunListItem])
 def list_discovery_runs(db: Session = Depends(get_db)):
-    user = _get_or_create_default_user(db)
+    user = get_or_create_default_user(db)
     runs = (
         db.query(DiscoveryRun)
         .filter(DiscoveryRun.user_id == user.id)
@@ -264,7 +254,7 @@ async def ingest_discovery_result(
             "paper_id": str(result.paper_id),
         }
 
-    user = _get_or_create_default_user(db)
+    user = get_or_create_default_user(db)
 
     try:
         metadata = await fetch_arxiv_metadata(result.arxiv_id)
