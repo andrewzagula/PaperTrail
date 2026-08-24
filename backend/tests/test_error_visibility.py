@@ -170,7 +170,7 @@ class DiscoveryFailureRecordingTests(unittest.TestCase):
         Base_metadata.drop_all(bind=self.engine)
         self.engine.dispose()
 
-    def _run_discovery_task(self, **discovery_patches):
+    def _run_discovery_task(self, task_session_local=None, **discovery_patches):
         import asyncio
 
         from app.models.models import DiscoveryRun, User
@@ -186,7 +186,8 @@ class DiscoveryFailureRecordingTests(unittest.TestCase):
             run_id = run.id
 
         with patch(
-            "app.database.SessionLocal", self.session_local
+            "app.database.SessionLocal",
+            task_session_local or self.session_local,
         ), patch.multiple(
             "app.services.discovery", **discovery_patches
         ):
@@ -219,6 +220,57 @@ class DiscoveryFailureRecordingTests(unittest.TestCase):
 
         self.assertEqual(run.status, "failed")
         self.assertIsNone(run.generated_queries)
+        self.assertEqual(
+            (run.budget_used or {}).get("failed_stage"), STAGE_GENERATING_QUERIES
+        )
+
+    def test_a_mid_run_commit_failure_still_marks_the_run_failed(self):
+        """The failure handler must survive the database itself failing.
+
+        SQLAlchemy leaves a session unusable after a failed commit until it is
+        rolled back; every later commit raises PendingRollbackError. Without a
+        rollback in the handler, a commit failure inside the run leaves the row
+        stuck in "running" forever.
+        """
+        from unittest.mock import AsyncMock
+
+        from sqlalchemy.exc import OperationalError, PendingRollbackError
+        from sqlalchemy.orm import Session as SASession, sessionmaker
+
+        class _BrokenAfterFailedCommitSession(SASession):
+            commit_calls = 0
+            fail_on_call = 2  # 1: status="running", 2: persisting the queries
+            needs_rollback = False
+
+            def commit(self):
+                cls = _BrokenAfterFailedCommitSession
+                if cls.needs_rollback:
+                    raise PendingRollbackError(
+                        "This Session's transaction has been rolled back"
+                    )
+                cls.commit_calls += 1
+                if cls.commit_calls == cls.fail_on_call:
+                    cls.needs_rollback = True
+                    raise OperationalError("UPDATE", {}, Exception("disk I/O error"))
+                return super().commit()
+
+            def rollback(self):
+                _BrokenAfterFailedCommitSession.needs_rollback = False
+                return super().rollback()
+
+        broken_session_local = sessionmaker(
+            autocommit=False,
+            autoflush=False,
+            bind=self.engine,
+            class_=_BrokenAfterFailedCommitSession,
+        )
+
+        run = self._run_discovery_task(
+            task_session_local=broken_session_local,
+            generate_search_queries=AsyncMock(return_value=["q1", "q2"]),
+        )
+
+        self.assertEqual(run.status, "failed")
         self.assertEqual(
             (run.budget_used or {}).get("failed_stage"), STAGE_GENERATING_QUERIES
         )

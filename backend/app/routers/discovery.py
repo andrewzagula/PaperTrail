@@ -162,6 +162,11 @@ async def _execute_discovery(run_id: uuid.UUID, question: str, max_results: int)
             run.status = "complete"
             db.commit()
         except Exception as e:
+            # The failure may have been the database itself (a commit above),
+            # which leaves the session unusable until it is rolled back. Without
+            # this, recording the failure below raises PendingRollbackError and
+            # the run stays stuck in "running" forever.
+            db.rollback()
             run.status = "failed"
             mapped_error = get_provider_error_response(e)
             if mapped_error:
