@@ -107,6 +107,7 @@ def _run_to_response(run: DiscoveryRun) -> DiscoveryRunResponse:
 
 async def _execute_discovery(run_id: uuid.UUID, question: str, max_results: int):
     from app.database import SessionLocal
+    from app.services import discovery as run_discovery_stages
     from app.services.discovery import run_discovery
 
     db = SessionLocal()
@@ -118,10 +119,23 @@ async def _execute_discovery(run_id: uuid.UUID, question: str, max_results: int)
         run.status = "running"
         db.commit()
 
+        progress = {"stage": run_discovery_stages.STAGE_GENERATING_QUERIES}
+
+        def _record_stage(stage: str) -> None:
+            progress["stage"] = stage
+
+        def _persist_queries(queries: list[str]) -> None:
+            # Commit the queries the moment they exist, so a later arXiv
+            # failure still leaves evidence that this stage succeeded.
+            run.generated_queries = queries
+            db.commit()
+
         try:
             result = await run_discovery(
                 question=question,
                 max_return=max_results,
+                on_stage=_record_stage,
+                on_queries=_persist_queries,
             )
 
             run.generated_queries = result["queries"]
@@ -157,6 +171,12 @@ async def _execute_discovery(run_id: uuid.UUID, question: str, max_results: int)
                 run.error_message = e.detail
             else:
                 run.error_message = str(e)
+
+            # Recorded in budget_used rather than a new column: the app has no
+            # migration step, so existing databases would not gain one.
+            budget_used = dict(run.budget_used or {})
+            budget_used["failed_stage"] = progress["stage"]
+            run.budget_used = budget_used
             db.commit()
     finally:
         db.close()

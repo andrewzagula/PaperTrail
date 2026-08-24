@@ -220,18 +220,40 @@ async def rank_results(
     return ranked
 
 
+STAGE_GENERATING_QUERIES = "generating_queries"
+STAGE_SEARCHING_ARXIV = "searching_arxiv"
+STAGE_RANKING_RESULTS = "ranking_results"
+
+
+def _report(callback, value) -> None:
+    if callback is not None:
+        callback(value)
+
+
 async def run_discovery(
     question: str,
     max_queries: int = DEFAULT_MAX_QUERIES,
     max_results_per_query: int = DEFAULT_MAX_RESULTS_PER_QUERY,
     max_return: int = DEFAULT_MAX_RETURN,
+    on_stage=None,
+    on_queries=None,
 ) -> dict:
-    queries = await generate_search_queries(question, max_queries=max_queries)
+    """Run the discovery pipeline.
 
+    on_stage and on_queries let a caller persist progress as it happens. A run
+    that dies in the arXiv stage would otherwise discard the queries the model
+    already produced, leaving no way to tell which stage actually failed.
+    """
+    _report(on_stage, STAGE_GENERATING_QUERIES)
+    queries = await generate_search_queries(question, max_queries=max_queries)
+    _report(on_queries, queries)
+
+    _report(on_stage, STAGE_SEARCHING_ARXIV)
     all_results = await search_arxiv_multi(
         queries, max_results_per_query=max_results_per_query,
     )
 
+    _report(on_stage, STAGE_RANKING_RESULTS)
     ranked = await rank_results(question, all_results, max_return=max_return)
     warnings = _build_discovery_warnings(
         queries=queries,
