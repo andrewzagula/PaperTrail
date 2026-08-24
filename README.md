@@ -102,7 +102,15 @@ Check backend setup state with:
 curl http://localhost:8000/health/details
 ```
 
-The diagnostics response includes provider names, model names, local data paths, and missing setting names. It does not include API keys.
+The diagnostics response includes provider names, model names, local data paths, missing setting names, and any settings that still hold an unedited placeholder. It does not include API keys.
+
+By default this only checks that the required settings are present. A well-formed but invalid key still reports `configured: true`, so the response also carries `credentials_verified: false` until the credentials are actually exercised. To send one minimal request to each provider and confirm the credentials work:
+
+```bash
+curl "http://localhost:8000/health/details?probe=true"
+```
+
+The probe costs a few tokens, which is why it is opt-in.
 
 ## Try It
 
@@ -153,7 +161,7 @@ PaperTrail reads backend configuration from `.env` in the repository root. Start
 
 ### Per-Workflow Models
 
-These variables let you tune cost, speed, or quality without changing code:
+Leave any of these blank to inherit `LLM_MODEL`. Set one only to override that single step, and make sure the value names a model that exists on the selected `LLM_PROVIDER`:
 
 - `DISCOVERY_QUERY_MODEL`
 - `DISCOVERY_RANK_MODEL`
@@ -247,6 +255,12 @@ cd frontend
 npm run dev
 ```
 
+Install the development dependencies (the runtime requirements plus `pytest`):
+
+```bash
+pip install -r backend/requirements-dev.txt
+```
+
 Run backend tests:
 
 ```bash
@@ -285,7 +299,7 @@ Contributions are welcome. Please keep issues and pull requests focused in scope
 
 Before opening a pull request:
 
-1. Run `pytest backend/tests -q`.
+1. Install `backend/requirements-dev.txt`, then run `pytest backend/tests -q`.
 2. Run `cd frontend && npm run build`.
 3. Keep local data, generated PDFs, Chroma files, `.env`, and caches out of Git.
 4. Describe which provider and embedding backend you tested with.
