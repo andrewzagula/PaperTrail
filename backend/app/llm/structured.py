@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Callable
 
 from jsonschema import ValidationError as JSONSchemaValidationError
@@ -8,6 +9,8 @@ from jsonschema import validate as validate_json_schema
 
 from app.llm.base import LLMMessage
 from app.llm.errors import ProviderRequestError
+
+logger = logging.getLogger("papertrail.llm")
 
 
 class StructuredOutputError(ProviderRequestError):
@@ -114,11 +117,26 @@ def generate_structured_payload(
 ) -> dict:
     native_error: Exception | None = None
 
+    # langchain-openai converts a dict schema into an OpenAI response format
+    # and requires a top-level "title" to use as the format name. Without one
+    # the native tier fails before any request is made, and every structured
+    # call silently pays for the slower JSON-text fallback instead.
+    native_schema = schema if "title" in schema else {"title": schema_name, **schema}
+
     try:
-        payload = native_generate(messages, model, temperature, schema)
+        payload = native_generate(messages, model, temperature, native_schema)
         return validate_json_object(payload, schema)
     except Exception as error:
         native_error = error
+        # The fallback hides this failure from callers, so make it visible:
+        # a native tier that always fails doubles the cost of every call, and
+        # that once went unnoticed for weeks.
+        logger.warning(
+            "Native structured output failed for schema '%s'; "
+            "falling back to JSON text mode: %s",
+            schema_name,
+            error,
+        )
 
     json_messages = build_json_messages(
         messages,

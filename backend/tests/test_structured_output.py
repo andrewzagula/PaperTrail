@@ -31,6 +31,47 @@ class StructuredOutputTests(unittest.TestCase):
 
         self.assertEqual(payload, {"value": "ok"})
 
+    def test_native_tier_receives_a_schema_with_a_title(self):
+        """langchain-openai refuses a dict schema without a top-level title.
+
+        When the native tier fails, every structured call silently pays for
+        the slower JSON-text fallback - the post-upgrade slowdown.
+        """
+        seen = {}
+
+        def native(messages, model, temperature, schema):
+            seen["schema"] = schema
+            return {"value": "ok"}
+
+        generate_structured_payload(
+            messages=[{"role": "user", "content": "Return value"}],
+            schema_name="test_schema",
+            schema=TEST_SCHEMA,
+            native_generate=native,
+            text_generate=lambda *_: self.fail("text fallback should not run"),
+        )
+
+        self.assertEqual(seen["schema"]["title"], "test_schema")
+        # The original schema object must not be mutated.
+        self.assertNotIn("title", TEST_SCHEMA)
+
+    def test_an_existing_schema_title_is_preserved(self):
+        seen = {}
+
+        def native(messages, model, temperature, schema):
+            seen["schema"] = schema
+            return {"value": "ok"}
+
+        generate_structured_payload(
+            messages=[{"role": "user", "content": "Return value"}],
+            schema_name="test_schema",
+            schema={"title": "custom_name", **TEST_SCHEMA},
+            native_generate=native,
+            text_generate=lambda *_: self.fail("text fallback should not run"),
+        )
+
+        self.assertEqual(seen["schema"]["title"], "custom_name")
+
     def test_parse_json_object_strips_code_fences(self):
         payload = parse_json_object('```json\n{"value": "ok"}\n```')
         self.assertEqual(payload, {"value": "ok"})
