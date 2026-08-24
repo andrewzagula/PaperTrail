@@ -226,6 +226,18 @@ def _store_paper(
     return paper, num_chunks
 
 
+def _discard_upload(pdf_path: Path) -> None:
+    """Delete a rejected upload without masking the original error.
+
+    A parser that still holds the file open makes unlink raise on Windows,
+    which would replace a clean 4xx with a 500.
+    """
+    try:
+        pdf_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 @router.post("/ingest/arxiv")
 async def ingest_arxiv(req: IngestArxivRequest, db: Session = Depends(get_db)):
     arxiv_id = extract_arxiv_id(req.arxiv_url)
@@ -284,17 +296,17 @@ async def ingest_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)
     try:
         raw_text = extract_text(pdf_path)
     except UserSafeServiceError as error:
-        pdf_path.unlink(missing_ok=True)
+        _discard_upload(pdf_path)
         _raise_user_safe_http_error(error)
 
     if not raw_text.strip():
-        pdf_path.unlink(missing_ok=True)
+        _discard_upload(pdf_path)
         raise HTTPException(status_code=422, detail=PDF_TEXT_EXTRACTION_DETAIL)
 
     try:
         pdf_meta = extract_metadata(pdf_path)
     except UserSafeServiceError as error:
-        pdf_path.unlink(missing_ok=True)
+        _discard_upload(pdf_path)
         _raise_user_safe_http_error(error)
     sections_data = split_into_sections(raw_text)
 

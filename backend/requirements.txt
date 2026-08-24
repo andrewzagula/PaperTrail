@@ -1,26 +1,26 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
 
-sqlalchemy==2.0.36
+sqlalchemy==2.0.52
 
-chromadb==0.6.3
+chromadb==1.5.9
 
-openai==1.59.3
-langchain-core==0.3.63
-langchain-openai==0.3.0
-langchain-anthropic==0.3.1
-langchain-google-genai==2.0.8
-langchain-huggingface==0.1.2
-langchain-ollama==0.2.2
-langgraph==0.2.60
-sentence-transformers==3.3.1
+openai==3.3.1
+langchain-core==1.6.0
+langchain-openai==1.6.0
+langchain-anthropic==1.6.1
+langchain-google-genai==4.3.5
+langchain-huggingface==1.2.2
+langchain-ollama==1.1.0
+langgraph==1.2.11
+sentence-transformers==6.0.0
 
-PyMuPDF==1.25.3
+PyMuPDF==1.28.2
 
 httpx==0.28.1
 
-python-dotenv==1.0.1
-pydantic==2.10.4
-pydantic-settings==2.7.1
-python-multipart==0.0.20
-jsonschema==4.23.0
+python-dotenv==1.2.3
+pydantic==2.13.4
+pydantic-settings==2.15.0
+python-multipart==0.0.32
+jsonschema==4.26.0

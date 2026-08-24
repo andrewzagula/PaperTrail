@@ -1,6 +1,6 @@
 from pathlib import Path
 
-import fitz
+import pymupdf
 
 from app.services.errors import UserSafeServiceError
 
@@ -40,7 +40,10 @@ def extract_metadata(pdf_path: Path) -> dict:
 
 def _open_pdf(pdf_path: Path):
     try:
-        doc = fitz.open(str(pdf_path))
+        # Opened from bytes rather than by path: PyMuPDF keeps the file handle
+        # open when a parse fails, which on Windows blocks callers from
+        # deleting the rejected upload.
+        doc = pymupdf.open(stream=pdf_path.read_bytes(), filetype="pdf")
         if doc.needs_pass:
             doc.close()
             raise UserSafeServiceError(422, PDF_READ_ERROR_DETAIL)
