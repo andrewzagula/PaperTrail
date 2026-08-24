@@ -31,12 +31,19 @@ interface DiscoveryRun {
     papers_ranked?: number;
     max_results_requested?: number;
     warnings?: string[];
+    failed_stage?: string;
   } | null;
   warnings: string[];
   error_message: string | null;
   created_at: string;
   results: DiscoveryResult[];
 }
+
+const FAILED_STAGE_LABELS: Record<string, string> = {
+  generating_queries: "while generating search queries",
+  searching_arxiv: "while searching arXiv",
+  ranking_results: "while ranking the results",
+};
 
 type IngestStatus = "loading" | "done" | "error";
 type IngestingState = Record<
@@ -227,10 +234,21 @@ export default function DiscoverResultsPage() {
 
           {run.status === "failed" && (
             <div className="mt-4 p-4 rounded-lg border border-red-500/30 bg-red-500/5">
-              <p className="font-medium text-red-500">Discovery failed</p>
+              <p className="font-medium text-red-500">
+                Discovery failed
+                {run.budget_used?.failed_stage &&
+                  FAILED_STAGE_LABELS[run.budget_used.failed_stage] &&
+                  ` ${FAILED_STAGE_LABELS[run.budget_used.failed_stage]}`}
+              </p>
               {run.error_message && (
                 <p className="text-sm text-[var(--muted)] mt-1">
                   {run.error_message}
+                </p>
+              )}
+              {run.generated_queries && run.generated_queries.length > 0 && (
+                <p className="text-sm text-[var(--muted)] mt-1">
+                  The search queries were generated before the failure and are
+                  shown below.
                 </p>
               )}
             </div>
@@ -255,7 +273,7 @@ export default function DiscoverResultsPage() {
                     {i + 1}. {q}
                   </div>
                 ))}
-                {run.budget_used && (
+                {run.budget_used?.total_papers_fetched != null && (
                   <p className="text-xs text-[var(--muted)] pt-2 border-t border-[var(--border)]">
                     {run.budget_used.total_papers_fetched} papers fetched,{" "}
                     {run.budget_used.papers_ranked} ranked
