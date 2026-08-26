@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import { useSearchParams } from "next/navigation";
@@ -138,6 +138,8 @@ function ComparePageContent() {
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [libraryError, setLibraryError] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const bootstrapKey = useRef<string | null>(null);
+  const settled = useRef(false);
   const [selectionMessage, setSelectionMessage] = useState("");
   const [compareLoading, setCompareLoading] = useState(false);
   const [compareError, setCompareError] = useState("");
@@ -149,16 +151,35 @@ function ComparePageContent() {
   const [saveSuccess, setSaveSuccess] = useState("");
   const [lastSavedKey, setLastSavedKey] = useState("");
 
+  /* The selection arrives from one of two places, or both: ?paper= in the URL
+     and whatever was left in storage by Library or a paper page. The merge is
+     written straight back, so this effect is idempotent and a second run reads
+     its own result. */
   useEffect(() => {
-    setSelectedIds(
-      mergeCompareSelection(
-        searchParams.getAll("paper"),
-        getStoredCompareSelection(),
-      ),
+    const merged = mergeCompareSelection(
+      searchParams.getAll("paper"),
+      getStoredCompareSelection(),
     );
+    bootstrapKey.current = merged.join(",");
+    settled.current = false;
+    setStoredCompareSelection(merged);
+    setSelectedIds(merged);
   }, [searchParams]);
 
+  /* Nothing is written back until state actually holds what the bootstrap
+     read. Without the guard this effect runs once with the empty initial
+     value and erases the selection that brought the person here, and in
+     development effects run twice, so it erases it every single time. */
   useEffect(() => {
+    const key = selectedIds.join(",");
+
+    if (!settled.current) {
+      if (bootstrapKey.current !== null && key === bootstrapKey.current) {
+        settled.current = true;
+      }
+      return;
+    }
+
     setStoredCompareSelection(selectedIds);
   }, [selectedIds]);
 
