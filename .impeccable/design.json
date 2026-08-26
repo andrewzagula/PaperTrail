@@ -1,0 +1,223 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-26T00:00:00Z",
+  "title": "Design System: PaperTrail",
+  "extensions": {
+    "colorMeta": {
+      "periwinkle": {
+        "role": "primary",
+        "displayName": "Periwinkle",
+        "canonical": "#8fa4ff",
+        "tonalRamp": ["#7488ea", "#8fa4ff", "#a6b6ff"],
+        "note": "Dark-theme accent. Ramp is press / base / hover."
+      },
+      "indigo": {
+        "role": "primary",
+        "displayName": "Indigo",
+        "canonical": "#4356c2",
+        "tonalRamp": ["#2f3d8f", "#3849a8", "#4356c2"],
+        "note": "Light-theme accent, same hue family deepened. Ramp is press / hover / base: on a light ground the interactive states go darker, not lighter."
+      },
+      "ground-dark": {
+        "role": "neutral",
+        "displayName": "Ground",
+        "canonical": "#12141c",
+        "tonalRamp": ["#0e1016", "#12141c", "#151823", "#171a24"],
+        "note": "Ramp is rail / ground / panel / field."
+      },
+      "ground-light": {
+        "role": "neutral",
+        "displayName": "Ground",
+        "canonical": "#f3f4f8",
+        "tonalRamp": ["#eceef5", "#f3f4f8", "#ffffff", "#ffffff"],
+        "note": "Ramp is rail / ground / panel / field. Rail is darker than ground in light mode and lighter in dark mode, so chrome always reads as recessed."
+      },
+      "line-dark": {
+        "role": "neutral",
+        "displayName": "Line",
+        "canonical": "#232838",
+        "tonalRamp": ["#1b1f2c", "#232838", "#39404f"],
+        "note": "Ramp is hairline / border / strong. Strong is field borders and interactive hover borders."
+      },
+      "line-light": {
+        "role": "neutral",
+        "displayName": "Line",
+        "canonical": "#dee1eb",
+        "tonalRamp": ["#e7e9f1", "#dee1eb", "#c3c8d8"]
+      },
+      "complete": {
+        "role": "tertiary",
+        "displayName": "Complete",
+        "canonical": "#5bd3a6",
+        "tonalRamp": ["#116848", "#5bd3a6"],
+        "note": "light / dark. Deepened on light to clear AA at 11px pill size."
+      },
+      "running": {
+        "role": "tertiary",
+        "displayName": "Running",
+        "canonical": "#e8b45a",
+        "tonalRamp": ["#7a570f", "#e8b45a"],
+        "note": "Also carries partial and stale results."
+      },
+      "failed": {
+        "role": "tertiary",
+        "displayName": "Failed",
+        "canonical": "#e06c75",
+        "tonalRamp": ["#b23c38", "#e06c75"],
+        "note": "Also the single red for destructive actions. There is no second red."
+      }
+    },
+    "typographyMeta": {
+      "title": { "displayName": "Title", "purpose": "One page heading per screen." },
+      "headline": { "displayName": "Headline", "purpose": "Breakdown section heads on reading screens only." },
+      "body": { "displayName": "Body", "purpose": "Breakdown prose, comparison narrative, chat. Max 68ch." },
+      "ui": { "displayName": "UI", "purpose": "Everything else: buttons, rows, tabs, nav, settings, result titles." },
+      "label": { "displayName": "Label", "purpose": "Uppercase chrome. Panel headers and palette section headers only, never content." },
+      "measurement": { "displayName": "Measurement", "purpose": "Counts, timings, dates, scores, arXiv ids, chunk counts, keyboard hints, section citations." },
+      "code": { "displayName": "Code", "purpose": "Pseudocode and starter files." }
+    },
+    "shadows": [
+      {
+        "name": "overlay-dark",
+        "value": "0 16px 48px rgba(0, 0, 0, 0.5)",
+        "purpose": "The command palette box, and any future modal. The only shadow in the product. Always paired with a scrim."
+      },
+      {
+        "name": "overlay-light",
+        "value": "0 16px 48px rgba(27, 30, 43, 0.25)",
+        "purpose": "Light-theme counterpart."
+      },
+      {
+        "name": "wash-hover",
+        "value": "inset 0 0 0 999px rgba(255, 255, 255, 0.05)",
+        "purpose": "NOT elevation. A colour wash implemented as an inset shadow so one token pair tints transparent and filled surfaces alike while still animating. Light theme uses rgba(27, 30, 43, 0.05). Never give it offset or blur."
+      },
+      {
+        "name": "wash-press",
+        "value": "inset 0 0 0 999px rgba(255, 255, 255, 0.09)",
+        "purpose": "Press state on full-width rows, which do not scale. Light theme uses rgba(27, 30, 43, 0.085)."
+      }
+    ],
+    "motion": [
+      { "name": "state", "value": "120ms ease", "purpose": "Hover, press, focus, and border colour changes on every interactive element." },
+      { "name": "ease-press", "value": "cubic-bezier(0.23, 1, 0.32, 1)", "purpose": "The transform half of press feedback. scale(0.97) on small controls only." },
+      { "name": "theme-swap", "value": "180ms ease", "purpose": "Colour properties only when the theme changes. Never layout." },
+      { "name": "spinner", "value": "0.7s linear", "purpose": "The single indeterminate spinner." },
+      { "name": "never", "value": "0ms", "purpose": "The command palette and any keyboard-initiated navigation. A hundred-times-a-day action must not have an entrance." }
+    ],
+    "breakpoints": [
+      { "name": "rail-collapse", "value": "1040px", "purpose": "Container query on the app shell. Rail drops labels to a 60px icon column; paired panels stack." },
+      { "name": "rail-horizontal", "value": "720px", "purpose": "Container query on the app shell. Rail moves to the top; label/control pairs stack; the compare table scrolls with its first column pinned." }
+    ],
+    "states": {
+      "hover": "Inset wash, or an accent tint where the accent is the fill. Outlined controls also raise their border to line-strong. Nothing moves. Gated behind @media (hover: hover) and (pointer: fine).",
+      "press": "scale(0.97) on small controls; a deeper wash on full-width rows. A 700px row scaled 3% moves its right edge 21px and reads as a glitch.",
+      "focus": "2px accent outline. offset 2px on small controls, -2px on rows running to a container edge, 1px on fields (which also shift their border to the accent). Never a background change.",
+      "disabled": "opacity 0.45, cursor not-allowed, aria-disabled=\"true\". Overrides hover and press rather than sitting alongside them. Never colour alone."
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one committed action in a screen region.",
+      "html": "<button class=\"ds-btn\">Discover</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border: 0; border-radius: 6px; background: #8fa4ff; color: #0e1016; font: 600 13px/1.45 'Instrument Sans', system-ui, sans-serif; cursor: pointer; transition: background-color 120ms ease, transform 120ms cubic-bezier(0.23,1,0.32,1); } .ds-btn:hover { background: #a6b6ff; } .ds-btn:active { background: #7488ea; transform: scale(0.97); } .ds-btn:focus-visible { outline: 2px solid #8fa4ff; outline-offset: 2px; } .ds-btn[aria-disabled=\"true\"] { opacity: 0.45; cursor: not-allowed; transform: none; }"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "The single destructive treatment. One red, one shape.",
+      "html": "<button class=\"ds-btn-danger\">Delete</button>",
+      "css": ".ds-btn-danger { display: inline-flex; align-items: center; padding: 8px 16px; border: 1px solid #232838; border-radius: 6px; background: transparent; color: #e06c75; font: 500 13px/1.45 'Instrument Sans', system-ui, sans-serif; cursor: pointer; transition: box-shadow 120ms ease, border-color 120ms ease, transform 120ms cubic-bezier(0.23,1,0.32,1); } .ds-btn-danger:hover { border-color: #e06c75; box-shadow: inset 0 0 0 999px rgba(255,255,255,0.05); } .ds-btn-danger:active { transform: scale(0.97); }"
+    },
+    {
+      "name": "Field with error",
+      "kind": "input",
+      "refersTo": "field-error",
+      "description": "The error message names the fix, not only the fault.",
+      "html": "<label class=\"ds-field\"><span class=\"lab\">arXiv link or id</span><input class=\"ds-input err\" value=\"arxiv.com/paper/attention\"><span class=\"err-msg\">That is not an arXiv address. Paste a link like arxiv.org/abs/1706.03762, or just the id on its own.</span></label>",
+      "css": ".ds-field { display: block; max-width: 520px; } .ds-field .lab { display: block; font-size: 12px; color: #8b93a7; margin-bottom: 6px; } .ds-input { width: 100%; padding: 8px 12px; border: 1px solid #232838; border-radius: 6px; background: #171a24; color: #e6e9f2; font: 400 13px/1.45 'Instrument Sans', system-ui, sans-serif; transition: border-color 120ms ease; } .ds-input:hover { border-color: #39404f; } .ds-input:focus-visible { border-color: #8fa4ff; outline: 2px solid #8fa4ff; outline-offset: 1px; } .ds-input.err { border-color: #e06c75; } .err-msg { display: block; margin-top: 6px; font-size: 12px; color: #e06c75; max-width: 62ch; }"
+    },
+    {
+      "name": "Status pill",
+      "kind": "chip",
+      "refersTo": "status-pill",
+      "description": "Lifecycle state only. Colour carries valence. Numbers never get one.",
+      "html": "<span class=\"ds-st ok\">complete</span> <span class=\"ds-st run\">running</span> <span class=\"ds-st bad\">failed</span> <span class=\"ds-st idle\">not started</span>",
+      "css": ".ds-st { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; } .ds-st.ok { color: #5bd3a6; background: rgba(91,211,166,0.1); } .ds-st.run { color: #e8b45a; background: rgba(232,180,90,0.1); } .ds-st.bad { color: #e06c75; background: rgba(224,108,117,0.1); } .ds-st.idle { color: #8b93a7; background: #1b1f2c; }"
+    },
+    {
+      "name": "Tag",
+      "kind": "chip",
+      "refersTo": "tag",
+      "description": "A category or a judgement, never a status. Severity grades take this form so they never read as pipeline states.",
+      "html": "<span class=\"ds-tag\">combine methods</span> <span class=\"ds-tag high\">high</span> <span class=\"ds-tag med\">medium</span> <span class=\"ds-tag quiet\">low</span>",
+      "css": ".ds-tag { font-size: 11px; color: #e6e9f2; border: 1px solid #232838; border-radius: 999px; padding: 2px 8px; background: transparent; white-space: nowrap; } .ds-tag.quiet { color: #8b93a7; } .ds-tag.high { color: #e06c75; border-color: #e06c75; } .ds-tag.med { color: #e8b45a; border-color: rgba(232,180,90,0.35); }"
+    },
+    {
+      "name": "Peer list item",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Discovery results, library rows, ideas, algorithm steps. Unboxed by rule: space and a hairline. The hover wash extends 12px beyond both edges because the item has no horizontal padding of its own.",
+      "html": "<div class=\"ds-item\"><div class=\"n\">01</div><div><h5>Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks</h5><p>Lewis, Perez, Piktus, Petroni, et al.</p></div></div>",
+      "css": ".ds-item { position: relative; display: grid; grid-template-columns: 32px 1fr; gap: 16px; padding: 20px 0; border-bottom: 1px solid #1b1f2c; } .ds-item:last-child { border-bottom: 0; padding-bottom: 0; } .ds-item::before { content: ''; position: absolute; inset: 0 -12px; border-radius: 6px; background: transparent; pointer-events: none; transition: background-color 120ms ease; } .ds-item:hover::before { background: rgba(255,255,255,0.05); } .ds-item .n { font-family: 'Geist Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: 13px; color: #8b93a7; } .ds-item h5 { margin: 0; font: 600 13px/1.45 'Instrument Sans', system-ui, sans-serif; } .ds-item p { margin: 4px 0 0; font-size: 12px; color: #8b93a7; }"
+    },
+    {
+      "name": "App shell",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "A wrapping flex row, never a grid: container queries cannot restyle the element that is the container, so the topology must live on children the query can reach.",
+      "html": "<div class=\"ds-shell\"><nav class=\"ds-rail\"><button class=\"ds-nav on\">Discover</button><button class=\"ds-nav\">Library</button></nav><main class=\"ds-main\">…</main></div>",
+      "css": ".ds-shell { container-type: inline-size; display: flex; flex-wrap: wrap; align-items: stretch; background: #12141c; color: #e6e9f2; } .ds-rail { width: 208px; flex: none; display: flex; flex-direction: column; gap: 2px; padding: 16px 12px; background: #0e1016; border-right: 1px solid #232838; } .ds-main { flex: 1 1 0; min-width: 0; } .ds-nav { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 0; border-radius: 6px; background: none; color: #8b93a7; font: 400 13px/1.45 'Instrument Sans', system-ui, sans-serif; cursor: pointer; text-align: left; } .ds-nav.on { background: #1c2130; color: #e6e9f2; } @container (max-width: 1040px) { .ds-rail { width: 60px; } .ds-nav { justify-content: center; gap: 0; } .ds-nav .lbl { display: none; } } @container (max-width: 720px) { .ds-rail { width: 100%; flex-direction: row; border-right: 0; border-bottom: 1px solid #232838; overflow-x: auto; } .ds-main { width: 100%; flex: none; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Workshop",
+    "overview": "PaperTrail runs on one machine, for one person, at localhost. The design assumes nobody else is coming: no avatars, no share affordances, no activity feeds, no account controls, no onboarding tour. Every piece of chrome that would imply an audience has been removed, and the removal is deliberate rather than unfinished. That single-occupant assumption sets the density. This is a bench, not a showroom: discovery results and library rows are dense and scannable, while the paper breakdown and the implementation plan loosen into a real reading measure, because those are the two places a person stops scanning and starts reading. The third thing the metaphor buys is honesty about work in progress. Long, failable operations are the normal case here: fetching, parsing, embedding, ranking, and generating each take real time and each can fail halfway. A partially-failed run is a first-class state with its own layout, not an error to hide, and every generated artifact carries a line saying a model wrote it.",
+    "keyCharacteristics": [
+      "Two themes from one hue family, indigo and periwinkle, both first-class",
+      "Instrument Sans throughout, Geist Mono wherever the interface reports a measurement",
+      "Dense by default, loose only where reading actually happens",
+      "Failure states name their fix, not just their fault",
+      "Generated output always says it was generated",
+      "Keyboard-first: the command palette is the primary way to move"
+    ],
+    "rules": [
+      { "name": "The Measurement Rule", "body": "Colour is never the only carrier of meaning. Every status colour is paired with a word, and disabled is opacity plus cursor plus aria-disabled, never a colour shift alone.", "section": "colors" },
+      { "name": "The Accent Scarcity Rule", "body": "The accent marks where a decision is available: the primary action, the current nav item, the focused element, a link. Never ornament, never a header fill, never a non-interactive surface.", "section": "colors" },
+      { "name": "The Contrast Floor", "body": "Every text and background pair in both themes clears WCAG AA. Verified across all thirteen screens; changing a colour token requires re-checking it. Status colours were deepened specifically to pass at 11px pill size, which is where they are used.", "section": "colors" },
+      { "name": "The Uppercase Rule", "body": "Uppercase with letterspacing is chrome, never content. Panel headers and palette section headers only.", "section": "typography" },
+      { "name": "The Mono Rule", "body": "Monospace means the interface is reporting a measurement or showing code. Never a costume for looking technical.", "section": "typography" },
+      { "name": "The Reading Step", "body": "Discovery and Library are triage and stay at 13px. Breakdown, comparison narrative, and implementation plan step to 14px with 1.65 leading and a real measure.", "section": "typography" },
+      { "name": "The One Shadow Rule", "body": "If a surface is not literally floating above the page with a scrim behind it, it gets no shadow. Cards do not lift, buttons do not lift, hover does not lift.", "section": "elevation" },
+      { "name": "The Container Rule", "body": "A box means a discrete module or an alert. Peer items in a list are never boxed; they get space and a hairline. If everything is a card, nothing is a module.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do take every spacing, size, radius, and colour value from a token. Zero literals.",
+      "Do give every interactive element all four states. A component without a disabled state is unfinished.",
+      "Do name the recovery in every failure message.",
+      "Do label everything a model generated, at the point it appears.",
+      "Do use .st for pipeline states, .score for numbers, .tag for categories and judgements.",
+      "Do put actions beside the thing they act on.",
+      "Do reuse the result-card shape for any ordered or checkable list of papers.",
+      "Do keep both themes at AA and re-verify after any colour change."
+    ],
+    "donts": [
+      "Don't box a peer list item.",
+      "Don't nest containers.",
+      "Don't add a shadow to anything that is not an overlay with a scrim.",
+      "Don't move an element on hover.",
+      "Don't scale a full-width row on press.",
+      "Don't use a background change as a focus indicator.",
+      "Don't uppercase content.",
+      "Don't use monospace as a texture for 'technical'.",
+      "Don't put a grid on the app shell; container queries cannot restyle their own container.",
+      "Don't introduce a second red, a second accent, or a second icon family.",
+      "Don't hand-author SVG icons.",
+      "Don't add avatars, share buttons, activity feeds, or account controls."
+    ]
+  }
+}
