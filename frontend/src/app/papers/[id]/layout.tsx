@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSelectedLayoutSegment } from "next/navigation";
 
@@ -158,6 +158,14 @@ export default function PaperLayout({ children }: { children: ReactNode }) {
       setReembedding(false);
     }
   };
+
+  /* Memoized so header-only state (a compare notice, a re-embed in flight)
+     does not re-render every panel below, Sections included, which can hold
+     the full text of the paper. */
+  const panelContext = useMemo(
+    () => ({ paper: paper as Paper, setPaper, tab, setTab }),
+    [paper, tab],
+  );
 
   /* From the plan, a panel tab has to navigate as well as switch. From the
      panels it only switches, which is why these are buttons and Implement
@@ -347,9 +355,7 @@ export default function PaperLayout({ children }: { children: ReactNode }) {
           </Link>
         </div>
 
-        <PaperProvider value={{ paper, setPaper, tab, setTab }}>
-          {children}
-        </PaperProvider>
+        <PaperProvider value={panelContext}>{children}</PaperProvider>
       </Body>
     </>
   );

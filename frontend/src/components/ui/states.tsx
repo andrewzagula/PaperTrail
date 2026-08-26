@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useId } from "react";
 import Link from "next/link";
 
 import { cx } from "@/lib/cx";
@@ -140,9 +140,13 @@ export function Confirm({
   error?: ReactNode;
   actions: ReactNode;
 }) {
+  /* Named by the rendered title element, not by String(title): the prop is a
+     ReactNode, and the first caller to pass markup would otherwise hand the
+     dialog the accessible name "[object Object]" with no type error. */
+  const titleId = useId();
   return (
-    <div className="confirm" role="alertdialog" aria-label={String(title)}>
-      <b>{title}</b>
+    <div className="confirm" role="alertdialog" aria-labelledby={titleId}>
+      <b id={titleId}>{title}</b>
       {children ? <p>{children}</p> : null}
       {error ? (
         <p className="notice bad" role="alert" style={{ marginTop: "var(--space-md)" }}>
