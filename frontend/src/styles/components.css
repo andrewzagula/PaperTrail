@@ -969,6 +969,10 @@ button.code-head { cursor: pointer; }
   max-width: 60ch;
   padding: var(--space-6xl) 0;
 }
+/* A blank that replaces the whole page needs the air above. One that sits
+   inside a section already has a page header, and often a tab strip, doing
+   that job, so it takes the section's own gap and nothing more. */
+.section > .blank { padding-top: 0; padding-bottom: var(--space-4xl); }
 .blank .kind {
   font-size: var(--text-sm);
   font-weight: 600;
