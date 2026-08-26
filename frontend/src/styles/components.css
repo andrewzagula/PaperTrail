@@ -209,7 +209,6 @@
 /* A menu in a toolbar sizes to its content; .selectwrap fills its field
    elsewhere, and a full-width sort control would be absurd. */
 .toolbar .selectwrap { flex: none; width: auto; min-width: 152px; }
-.toolbar .spacer { margin-left: auto; }
 
 /* ============================================================
    BUTTONS

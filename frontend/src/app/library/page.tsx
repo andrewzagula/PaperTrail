@@ -140,6 +140,11 @@ export default function LibraryPage() {
   const [saved, setSaved] = useState<SavedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [partErrors, setPartErrors] = useState<{
+    papers?: string;
+    runs?: string;
+    saved?: string;
+  }>({});
 
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
@@ -163,47 +168,56 @@ export default function LibraryPage() {
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState("");
 
+  /* Each list stands or falls on its own: a corrupt saved item must not take
+     down the papers a person came here to reach. The page-level failure is
+     reserved for all three failing at once, which is what a stopped server
+     looks like. */
   const load = useCallback(async (showLoading = true) => {
     if (showLoading) {
       setLoading(true);
     }
     setError("");
 
-    try {
-      const [papersRes, runsRes, savedRes] = await Promise.all([
-        fetch(`${API_URL}/papers/`),
-        fetch(`${API_URL}/discover/`),
-        fetch(`${API_URL}/workspace/saved-items`),
-      ]);
+    async function fetchList<T>(
+      url: string,
+      fallback: string,
+    ): Promise<{ data?: T; error?: string }> {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          throw new Error(await getApiErrorMessage(res, fallback));
+        }
+        return { data: (await res.json()) as T };
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : fallback };
+      }
+    }
 
-      if (!papersRes.ok) {
-        throw new Error(
-          await getApiErrorMessage(papersRes, "Failed to load your papers."),
-        );
-      }
-      if (!runsRes.ok) {
-        throw new Error(
-          await getApiErrorMessage(runsRes, "Failed to load your discovery runs."),
-        );
-      }
-      if (!savedRes.ok) {
-        throw new Error(
-          await getApiErrorMessage(savedRes, "Failed to load your saved work."),
-        );
-      }
+    const [papersOut, runsOut, savedOut] = await Promise.all([
+      fetchList<LibraryPaper[]>(`${API_URL}/papers/`, "Failed to load your papers."),
+      fetchList<DiscoveryRunItem[]>(
+        `${API_URL}/discover/`,
+        "Failed to load your discovery runs.",
+      ),
+      fetchList<SavedItem[]>(
+        `${API_URL}/workspace/saved-items`,
+        "Failed to load your saved work.",
+      ),
+    ]);
 
-      setPapers(await papersRes.json());
-      setRuns(await runsRes.json());
-      setSaved(await savedRes.json());
-    } catch (err) {
-      setPapers([]);
-      setRuns([]);
-      setSaved([]);
-      setError(err instanceof Error ? err.message : "Failed to load your library.");
-    } finally {
-      if (showLoading) {
-        setLoading(false);
-      }
+    setPapers(papersOut.data ?? []);
+    setRuns(runsOut.data ?? []);
+    setSaved(savedOut.data ?? []);
+    setPartErrors({
+      papers: papersOut.error,
+      runs: runsOut.error,
+      saved: savedOut.error,
+    });
+    if (papersOut.error && runsOut.error && savedOut.error) {
+      setError(papersOut.error);
+    }
+    if (showLoading) {
+      setLoading(false);
     }
   }, []);
 
@@ -315,11 +329,14 @@ export default function LibraryPage() {
       const data: { reembedded_count: number } = await res.json();
       setPaperNotice(`Re-embedded ${papersWord(data.reembedded_count)}.`);
       setSelectedIds([]);
-      await load(false);
     } catch (err) {
       setPaperError(err instanceof Error ? err.message : "Failed to re-embed.");
     } finally {
       setBulk("");
+      // In finally, because the server commits per paper and stops at the
+      // first failure: after a mid-batch error the list on screen is at its
+      // most wrong, and that is exactly when it most needs refreshing.
+      await load(false);
     }
   };
 
@@ -345,11 +362,11 @@ export default function LibraryPage() {
       setPaperNotice(
         `Re-embedded ${papersWord(data.reembedded_count)}. ${data.skipped_count} were already current.`,
       );
-      await load(false);
     } catch (err) {
       setPaperError(err instanceof Error ? err.message : "Failed to re-embed.");
     } finally {
       setBulk("");
+      await load(false);
     }
   };
 
@@ -366,11 +383,11 @@ export default function LibraryPage() {
         throw new Error(await getApiErrorMessage(res, "Failed to re-embed."));
       }
       setPaperNotice(`Re-embedded ${paper.title}.`);
-      await load(false);
     } catch (err) {
       setPaperError(err instanceof Error ? err.message : "Failed to re-embed.");
     } finally {
       setSingleReembedId(null);
+      await load(false);
     }
   };
 
@@ -402,7 +419,9 @@ export default function LibraryPage() {
     } catch (err) {
       setPaperError(
         `${err instanceof Error ? err.message : "Failed to remove papers."}${
-          removed > 0 ? ` ${papersWord(removed)} were removed before this.` : ""
+          removed > 0
+            ? ` ${papersWord(removed)} ${removed === 1 ? "was" : "were"} removed before this.`
+            : ""
         }`,
       );
     } finally {
@@ -532,7 +551,14 @@ export default function LibraryPage() {
     );
   }
 
-  const empty = papers.length === 0 && runs.length === 0 && saved.length === 0;
+  const anyPartError = Boolean(
+    partErrors.papers || partErrors.runs || partErrors.saved,
+  );
+  const empty =
+    !anyPartError &&
+    papers.length === 0 &&
+    runs.length === 0 &&
+    saved.length === 0;
   const compareReady =
     selectedVisible.length >= 2 && selectedVisible.length <= MAX_COMPARE_SELECTION;
 
@@ -621,7 +647,14 @@ export default function LibraryPage() {
                 </WarnPanel>
               ) : null}
 
-              {papers.length === 0 ? (
+              {partErrors.papers ? (
+                <Notice tone="bad">
+                  {partErrors.papers}{" "}
+                  <button type="button" className="lnk" onClick={() => load()}>
+                    Try again
+                  </button>
+                </Notice>
+              ) : papers.length === 0 ? (
                 <Empty>
                   No papers yet.{" "}
                   <Link href="/papers/new" className="lnk">
@@ -651,10 +684,10 @@ export default function LibraryPage() {
                       onChange={(value) => setSort(value as SortKey)}
                       options={SORTS}
                     />
-                    <span className="spacer" />
                     <Button
                       variant="ghost"
                       size="sm"
+                      style={{ marginLeft: "auto" }}
                       onClick={toggleAllVisible}
                       disabled={visiblePapers.length === 0 || busy}
                     >
@@ -827,7 +860,14 @@ export default function LibraryPage() {
               >
                 Discovery runs
               </SectionHead>
-              {runs.length === 0 ? (
+              {partErrors.runs ? (
+                <Notice tone="bad">
+                  {partErrors.runs}{" "}
+                  <button type="button" className="lnk" onClick={() => load()}>
+                    Try again
+                  </button>
+                </Notice>
+              ) : runs.length === 0 ? (
                 <Empty>
                   No discovery runs yet.{" "}
                   <Link href="/" className="lnk">
@@ -865,7 +905,14 @@ export default function LibraryPage() {
               >
                 Saved work
               </SectionHead>
-              {saved.length === 0 ? (
+              {partErrors.saved ? (
+                <Notice tone="bad">
+                  {partErrors.saved}{" "}
+                  <button type="button" className="lnk" onClick={() => load()}>
+                    Try again
+                  </button>
+                </Notice>
+              ) : saved.length === 0 ? (
                 <Empty>
                   Nothing saved yet. Comparisons, idea sets, and implementation
                   plans land here once you save one.
