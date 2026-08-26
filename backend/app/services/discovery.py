@@ -122,9 +122,15 @@ def _build_discovery_warnings(
     return _dedupe_warnings(warnings)
 
 
-async def generate_search_queries(question: str, max_queries: int = DEFAULT_MAX_QUERIES) -> list[str]:
-    payload = get_structured_client().generate_structured(
-        model=settings.discovery_query_model,
+async def generate_search_queries(
+    question: str,
+    max_queries: int = DEFAULT_MAX_QUERIES,
+    *,
+    client=None,
+    model: str | None = None,
+) -> list[str]:
+    payload = (client or get_structured_client()).generate_structured(
+        model=settings.discovery_query_model if model is None else model,
         temperature=0.3,
         schema_name="discovery_queries",
         schema=QUERY_RESPONSE_JSON_SCHEMA,
@@ -158,6 +164,9 @@ async def rank_results(
     question: str,
     results: list[ArxivResult],
     max_return: int = DEFAULT_MAX_RETURN,
+    *,
+    client=None,
+    model: str | None = None,
 ) -> list[dict]:
     if not results:
         return []
@@ -171,8 +180,8 @@ async def rank_results(
             f"    Abstract: {abstract_snippet}\n"
         )
 
-    payload = get_structured_client().generate_structured(
-        model=settings.discovery_rank_model,
+    payload = (client or get_structured_client()).generate_structured(
+        model=settings.discovery_rank_model if model is None else model,
         temperature=0.1,
         schema_name="discovery_rankings",
         schema=RANKING_RESPONSE_JSON_SCHEMA,
@@ -244,8 +253,20 @@ async def run_discovery(
     that dies in the arXiv stage would otherwise discard the queries the model
     already produced, leaving no way to tell which stage actually failed.
     """
+    # One configuration for the whole run. This executes on a background
+    # thread, and a settings change landing between stages would otherwise
+    # rebuild the client mid-run: queries written by one provider, ranked by
+    # another, and nothing recorded to say so. The client and both stage
+    # models are captured here, so the run finishes on the setup it started
+    # with and the next run picks up the change.
+    client = get_structured_client()
+    query_model = settings.discovery_query_model
+    rank_model = settings.discovery_rank_model
+
     _report(on_stage, STAGE_GENERATING_QUERIES)
-    queries = await generate_search_queries(question, max_queries=max_queries)
+    queries = await generate_search_queries(
+        question, max_queries=max_queries, client=client, model=query_model,
+    )
     _report(on_queries, queries)
 
     _report(on_stage, STAGE_SEARCHING_ARXIV)
@@ -254,7 +275,9 @@ async def run_discovery(
     )
 
     _report(on_stage, STAGE_RANKING_RESULTS)
-    ranked = await rank_results(question, all_results, max_return=max_return)
+    ranked = await rank_results(
+        question, all_results, max_return=max_return, client=client, model=rank_model,
+    )
     warnings = _build_discovery_warnings(
         queries=queries,
         max_queries=max_queries,
