@@ -20,6 +20,24 @@ PLACEHOLDER_MARKERS = (
     ">",
 )
 
+PROVIDER_ORDER = (
+    "openai",
+    "anthropic",
+    "gemini",
+    "openai_compatible",
+    "ollama",
+    "sentence_transformers",
+)
+
+PROVIDER_LABELS = {
+    "openai": "OpenAI",
+    "anthropic": "Anthropic",
+    "gemini": "Google Gemini",
+    "openai_compatible": "OpenAI-compatible endpoint",
+    "ollama": "Ollama, on this machine",
+    "sentence_transformers": "Sentence Transformers, on this machine",
+}
+
 CREDENTIAL_NOT_CHECKED = "not_checked"
 CREDENTIAL_OK = "ok"
 CREDENTIAL_FAILED = "failed"
@@ -71,6 +89,44 @@ def _required_embedding_settings(provider: str) -> list[tuple[str, str]] | None:
         "sentence_transformers": [],
     }
     return required.get(provider)
+
+
+def describe_providers() -> dict:
+    """Per provider, what it needs and whether this machine has it.
+
+    The Settings screen uses this to say which providers are ready before you
+    switch to one, rather than letting you pick a broken one and find out on
+    the next request. Values are never returned, only whether they are usable.
+    """
+
+    def describe(required) -> list[dict]:
+        out = []
+        for provider in PROVIDER_ORDER:
+            requirements = required(provider)
+            if requirements is None:
+                continue
+            missing = [name for name, value in requirements if not _is_present(value)]
+            placeholders = [
+                name
+                for name, value in requirements
+                if _is_present(value) and _looks_like_placeholder(value)
+            ]
+            out.append(
+                {
+                    "value": provider,
+                    "label": PROVIDER_LABELS.get(provider, provider),
+                    "requires": [name for name, _ in requirements],
+                    "missing_settings": missing,
+                    "placeholder_settings": placeholders,
+                    "ready": not missing and not placeholders,
+                }
+            )
+        return out
+
+    return {
+        "chat": describe(_required_llm_settings),
+        "embedding": describe(_required_embedding_settings),
+    }
 
 
 def _config_status(provider_setting: str, model: str, required) -> dict:

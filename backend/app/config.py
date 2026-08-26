@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -5,6 +6,53 @@ from pydantic_settings import BaseSettings
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
+
+# Choices made in the app, layered on top of .env rather than rewritten into
+# it. Keeping them apart means "how this machine was set up" and "what I picked
+# in Settings" stay legible as separate things, and reverting is deleting one
+# file rather than un-editing a dotfile.
+SETTINGS_FILE = DATA_DIR / "settings.json"
+
+CHAT_PROVIDERS = ("openai", "anthropic", "gemini", "openai_compatible", "ollama")
+EMBEDDING_PROVIDERS = ("openai", "sentence_transformers")
+
+PROVIDER_FIELDS = {
+    "llm_provider": CHAT_PROVIDERS,
+    "embedding_provider": EMBEDDING_PROVIDERS,
+}
+MODEL_FIELDS = ("llm_model", "embedding_model")
+
+# Each of these may instead be null, meaning "follow the chat model". That
+# resolves to an empty string on the settings object, because the provider
+# clients already read an empty model as "use the default" and a second
+# convention for the same idea is one too many.
+WORKFLOW_MODEL_FIELDS = (
+    "discovery_query_model",
+    "discovery_rank_model",
+    "analysis_model",
+    "chat_model",
+    "compare_profile_model",
+    "compare_synthesis_model",
+    "idea_generation_model",
+    "idea_critique_model",
+    "implementation_extraction_model",
+    "implementation_code_model",
+    "implementation_review_model",
+)
+
+EDITABLE_FIELDS = tuple(PROVIDER_FIELDS) + MODEL_FIELDS + WORKFLOW_MODEL_FIELDS
+
+
+def read_stored_overrides() -> dict:
+    """Settings chosen in the app. Missing or unreadable means none."""
+    try:
+        with SETTINGS_FILE.open(encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {key: value for key, value in data.items() if key in EDITABLE_FIELDS}
 
 
 class Settings(BaseSettings):
@@ -54,3 +102,32 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def apply_stored_overrides() -> dict:
+    """Layer the stored choices onto the live settings object.
+
+    Returns the overrides it applied, so a caller can tell which values came
+    from here rather than from .env.
+    """
+    overrides = read_stored_overrides()
+
+    for field in tuple(PROVIDER_FIELDS) + MODEL_FIELDS:
+        value = overrides.get(field)
+        if isinstance(value, str) and value.strip():
+            setattr(settings, field, value.strip())
+
+    for field in WORKFLOW_MODEL_FIELDS:
+        if field not in overrides:
+            continue
+        value = overrides[field]
+        setattr(
+            settings,
+            field,
+            value.strip() if isinstance(value, str) and value.strip() else "",
+        )
+
+    return overrides
+
+
+apply_stored_overrides()

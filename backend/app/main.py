@@ -8,7 +8,15 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.database import init_db
 from app.diagnostics import build_health_details
-from app.routers import compare, discovery, ideas, implementations, papers, workspace
+from app.routers import (
+    compare,
+    discovery,
+    ideas,
+    implementations,
+    papers,
+    settings as settings_router,
+    workspace,
+)
 
 
 @asynccontextmanager
@@ -63,6 +71,7 @@ app.include_router(ideas.router)
 app.include_router(implementations.router)
 app.include_router(discovery.router)
 app.include_router(workspace.router)
+app.include_router(settings_router.router)
 
 
 @app.get("/health")
