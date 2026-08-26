@@ -23,11 +23,14 @@ import {
   Spinner,
   StatusPill,
   TopBar,
+  WarnPanel,
   Working,
+  toneFor,
 } from "@/components";
 import { cx } from "@/lib/cx";
 import { addPaperToCompare } from "@/lib/compare-selection";
 import { getApiErrorMessage } from "@/lib/api-errors";
+import { explainEmbedding, needsEmbedding } from "@/lib/embedding";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -70,6 +73,10 @@ interface Paper {
   created_at: string;
   structured_breakdown: Breakdown | null;
   sections: Section_[];
+  embedding_status: string;
+  embedding_provider: string;
+  embedding_model: string;
+  embedded_at: string | null;
 }
 
 type TabKey = "breakdown" | "chat" | "sections";
@@ -125,6 +132,8 @@ export default function PaperView() {
     tone: "quiet" | "bad";
     message: string;
   } | null>(null);
+  const [reembedding, setReembedding] = useState(false);
+  const [reembedError, setReembedError] = useState("");
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -217,6 +226,38 @@ export default function PaperView() {
       message:
         "The compare list already holds five papers. Open Compare to change the selection.",
     });
+  };
+
+  /* Re-embedding is offered here as well as in Library, because this is
+     where a person notices the paper is out of step: they open it to chat
+     with it and the answers stop lining up. */
+  const handleReembed = async () => {
+    if (!paper) return;
+
+    setReembedding(true);
+    setReembedError("");
+
+    try {
+      const res = await fetch(`${API_URL}/papers/${paper.id}/reembed`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        throw new Error(await getApiErrorMessage(res, "Failed to re-embed."));
+      }
+
+      const data: {
+        embedding_status: string;
+        embedding_provider: string;
+        embedding_model: string;
+        embedded_at: string | null;
+      } = await res.json();
+
+      setPaper({ ...paper, ...data });
+    } catch (err) {
+      setReembedError(err instanceof Error ? err.message : "Failed to re-embed.");
+    } finally {
+      setReembedding(false);
+    }
   };
 
   const handleChatSend = async () => {
@@ -369,6 +410,14 @@ export default function PaperView() {
               </StatusPill>
             </dd>
           </div>
+          <div>
+            <dt>Embedding</dt>
+            <dd>
+              <StatusPill tone={toneFor(paper.embedding_status)}>
+                {paper.embedding_status}
+              </StatusPill>
+            </dd>
+          </div>
           {paper.arxiv_url ? (
             <div>
               <dt>Source</dt>
@@ -385,6 +434,33 @@ export default function PaperView() {
             </div>
           ) : null}
         </dl>
+
+        {needsEmbedding(paper.embedding_status) ? (
+          <div style={{ marginTop: "var(--space-2xl)" }}>
+            <WarnPanel
+              title="This paper is not embedded with the model you have set"
+              actions={
+                reembedding ? (
+                  <Working>Sending the sections to the embedding provider</Working>
+                ) : (
+                  <Button size="sm" onClick={handleReembed}>
+                    Re-embed it
+                  </Button>
+                )
+              }
+            >
+              {explainEmbedding(paper.embedding_status)} Chat answers and
+              comparisons that draw on this paper can disagree with the rest of
+              your library until it is re-embedded. The model set now is{" "}
+              {paper.embedding_provider} / {paper.embedding_model}.
+            </WarnPanel>
+            {reembedError ? (
+              <div style={{ marginTop: "var(--space-lg)" }}>
+                <Notice tone="bad">{reembedError}</Notice>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {compareNotice ? (
           <div style={{ marginTop: "var(--space-lg)" }}>
