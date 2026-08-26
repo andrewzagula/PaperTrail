@@ -206,23 +206,6 @@ export function CommandPalette({
     };
   }, [open]);
 
-  /* Escape is bound to the document rather than the input, because a click
-     on the box's own padding takes focus off the input and Escape has to
-     keep working from wherever focus landed. */
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", onEscape);
-    return () => document.removeEventListener("keydown", onEscape);
-  }, [open, onClose]);
-
   const groups = useMemo(
     () => groupEntries([...ACTIONS, ...entries], query),
     [entries, query],
@@ -243,6 +226,41 @@ export function CommandPalette({
     [onClose, router],
   );
 
+  /* Every key the palette answers to is bound to the document, not to the
+     input. A click on the box's own padding takes focus off the input, and
+     the arrows have to keep working from wherever focus landed rather than
+     leaving a keyboard-first control reachable only by mouse. */
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setCursor((current) => (flat.length ? (current + 1) % flat.length : 0));
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setCursor((current) =>
+          flat.length ? (current - 1 + flat.length) % flat.length : 0,
+        );
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        go(active);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose, flat, active, go]);
+
   /* Keeping the highlighted row on screen is the whole point of arrow keys. */
   useEffect(() => {
     if (!active) {
@@ -255,30 +273,6 @@ export function CommandPalette({
   if (!open) {
     return null;
   }
-
-  const onKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onClose();
-      return;
-    }
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setCursor((current) => (flat.length ? (current + 1) % flat.length : 0));
-      return;
-    }
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setCursor((current) =>
-        flat.length ? (current - 1 + flat.length) % flat.length : 0,
-      );
-      return;
-    }
-    if (event.key === "Enter") {
-      event.preventDefault();
-      go(active);
-    }
-  };
 
   return (
     <div
@@ -305,7 +299,6 @@ export function CommandPalette({
               setQuery(event.target.value);
               setCursor(0);
             }}
-            onKeyDown={onKeyDown}
             placeholder="Search papers, saved work, and runs"
             aria-label="Search papers, saved work, and runs"
             role="combobox"
@@ -317,17 +310,35 @@ export function CommandPalette({
           />
         </div>
 
+        {/* The Actions rows survive a dead server, so the error cannot hide
+            behind an "only when empty" branch: with them present the list is
+            never empty, and the person would see six shortcuts and no hint
+            that the rest of their library is missing. */}
+        {loadError ? (
+          <p className="pal-empty" role="alert">
+            {loadError} Actions still work; the rest of your library is not
+            loaded.
+          </p>
+        ) : null}
+
         <div className="pal-list" id="pal-list" role="listbox" ref={listRef}>
           {flat.length === 0 ? (
-            <p className="pal-empty">
-              {loadError
-                ? `${loadError} Actions still work; the rest of your library is not loaded.`
-                : `Nothing matches ${query.trim()}.`}
-            </p>
+            !loadError && <p className="pal-empty">Nothing matches {query.trim()}.</p>
           ) : (
             groups.map((group) => (
-              <div key={group.name}>
-                <div className="pal-label">
+              /* A group inside a listbox, like optgroup inside select: the
+                 options stay owned by the listbox through it, so assistive
+                 technology still counts and announces them as one list. */
+              <div
+                key={group.name}
+                role="group"
+                aria-labelledby={`pal-label-${group.name.replace(/\s/g, "-")}`}
+              >
+                <div
+                  className="pal-label"
+                  id={`pal-label-${group.name.replace(/\s/g, "-")}`}
+                  role="presentation"
+                >
                   <span>{group.name}</span>
                   {group.shown.length < group.total ? (
                     <span className="n">
