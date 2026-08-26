@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -14,6 +14,7 @@ import {
 
 import { cx } from "@/lib/cx";
 import { Kbd } from "@/components/ui/display";
+import { CommandPalette } from "./CommandPalette";
 
 /* ------------------------------------------------------------------
    The shell is a wrapping flex row, never a grid: container queries
@@ -51,15 +52,26 @@ function isActive(entry: NavEntry, pathname: string): boolean {
   );
 }
 
-export function AppShell({
-  children,
-  onOpenPalette,
-}: {
-  children: ReactNode;
-  /* Nothing passes this yet. The palette is specified in DESIGN.md. */
-  onOpenPalette?: () => void;
-}) {
+export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "/";
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  /* Registered once, on the document, because the shortcut has to work
+     wherever focus happens to be. The browser's own find-in-page is not
+     bound to this combination, so nothing is being taken away. */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  /* Stable, so the palette does not rebind its own listeners every render. */
+  const closePalette = useCallback(() => setPaletteOpen(false), []);
 
   return (
     <IconContext.Provider value={{ size: 15, weight: "regular" }}>
@@ -72,7 +84,7 @@ export function AppShell({
           <button
             type="button"
             className="searchtrigger"
-            onClick={onOpenPalette}
+            onClick={() => setPaletteOpen(true)}
             aria-label="Search and commands"
           >
             <MagnifyingGlass aria-hidden />
@@ -102,6 +114,8 @@ export function AppShell({
 
         <div className="main">{children}</div>
       </div>
+
+      <CommandPalette open={paletteOpen} onClose={closePalette} />
     </IconContext.Provider>
   );
 }

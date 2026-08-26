@@ -1086,6 +1086,91 @@ button.code-head { cursor: pointer; }
   overflow: hidden;
 }
 
+/* The command palette lives inside .overlay-box. Nothing here animates,
+   including the highlight: this is a hundred-times-a-day action, and the
+   arrow keys have to feel like they are moving a cursor, not playing a
+   transition. That is why the rows are absent from the state block below. */
+.pal-in {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  height: 46px;
+  padding: 0 var(--space-2xl);
+  border-bottom: 1px solid var(--line);
+}
+.pal-in > svg { width: 15px; height: 15px; flex: none; color: var(--mut); }
+.pal-in input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-lg);
+}
+.pal-in input::placeholder { color: var(--mut); }
+
+.pal-list { max-height: min(420px, 56vh); overflow-y: auto; padding: var(--space-md) 0; }
+
+/* One of the two places uppercase appears. The other is a panel header. */
+.pal-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  padding: var(--space-md) var(--space-2xl) var(--space-xs);
+  color: var(--mut);
+  font-size: var(--text-micro);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+.pal-label .n { font-weight: 500; letter-spacing: 0; text-transform: none; }
+
+.pal-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: var(--space-md) var(--space-2xl);
+  cursor: pointer;
+}
+.pal-row .t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pal-row .k {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--mut);
+  font-size: var(--text-micro);
+}
+.pal-row.on { background: var(--acc-soft); color: var(--acc); }
+.pal-row.on .k { color: var(--acc); }
+
+.pal-empty {
+  padding: var(--space-4xl) var(--space-2xl);
+  color: var(--mut);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.pal-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xl);
+  padding: var(--space-md) var(--space-2xl);
+  border-top: 1px solid var(--line);
+  color: var(--mut);
+  font-size: var(--text-micro);
+}
+.pal-foot span { display: flex; align-items: center; gap: var(--space-sm); }
 
 /* ============================================================
    INTERACTION STATES
