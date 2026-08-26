@@ -1,29 +1,235 @@
 @import "tailwindcss";
+@import "../styles/components.css";
+
+/* ============================================================
+   PaperTrail design tokens.
+   Normative source is DESIGN.md at the project root. Every value
+   here corresponds to a token documented there. Nothing in the app
+   should hard-code a colour, size, radius, or spacing value.
+   ============================================================ */
 
 :root {
-  --background: #fafafa;
-  --foreground: #0a0a0a;
-  --primary: #2563eb;
-  --primary-hover: #1d4ed8;
-  --muted: #6b7280;
-  --border: #e5e7eb;
-  --card: #ffffff;
+  /* ---- Spacing. 4px base, 2px and 6px half-steps for dense controls. ---- */
+  --space-2xs: 2px;
+  --space-xs: 4px;
+  --space-sm: 6px;
+  --space-md: 8px;
+  --space-lg: 12px;
+  --space-xl: 16px;
+  --space-2xl: 20px;
+  --space-3xl: 24px;
+  --space-4xl: 32px;
+  --space-6xl: 64px;
+  --space-7xl: 80px;
+  --space-8xl: 96px;
+
+  /* ---- Type. Nine steps, no half-pixels. ---- */
+  --text-micro: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 14px;
+  --text-xl: 15px;
+  --text-base: 16px;
+  --text-lede: 17px;
+  --text-title: 21px;
+  --text-head: 24px;
+
+  /* ---- Shape. Four radii plus full for pills. ---- */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-full: 999px;
+
+  /* ---- Leading and tracking. ---- */
+  --leading-tight: 1.1;
+  --leading-snug: 1.3;
+  --leading-ui: 1.45;
+  --leading-body: 1.65;
+  --tracking-tight: -0.02em;
+  --tracking-snug: -0.01em;
+  --tracking-wide: 0.08em;
+
+  /* ---- Motion. ---- */
+  --dur-state: 120ms;
+  --dur-theme: 180ms;
+  --ease-press: cubic-bezier(0.23, 1, 0.32, 1);
+
+  /* ---- Settings hooks. Written by the Settings screen. ---- */
+  --rail-width: 208px;
+  --row-y: var(--space-lg);
+  --item-y: var(--space-2xl);
+  --sec-gap: var(--space-4xl);
+  --body-pad: var(--space-3xl);
+  --bar-h: 36px;
+  --reading-size: 14px;
+
+  /* ---- Dark is the product default. ---- */
+  --bg: #12141c;
+  --side: #0e1016;
+  --panel: #151823;
+  --field: #171a24;
+  --ink: #e6e9f2;
+  --mut: #8b93a7;
+  --line: #232838;
+  --line-soft: #1b1f2c;
+  --line-strong: #39404f;
+  --acc: #8fa4ff;
+  --acc-ink: #0e1016;
+  --acc-soft: rgba(143, 164, 255, 0.12);
+  --acc-hover: #a6b6ff;
+  --acc-press: #7488ea;
+  --nav-on: #1c2130;
+  --ok: #5bd3a6;
+  --ok-bg: rgba(91, 211, 166, 0.1);
+  --run: #e8b45a;
+  --run-bg: rgba(232, 180, 90, 0.1);
+  --bad: #e06c75;
+  --bad-bg: rgba(224, 108, 117, 0.1);
+  --warn-line: rgba(232, 180, 90, 0.35);
+  --scrim: rgba(5, 7, 12, 0.6);
+  --shadow-overlay: 0 16px 48px rgba(0, 0, 0, 0.5);
+  --hover: rgba(255, 255, 255, 0.05);
+  --press: rgba(255, 255, 255, 0.09);
+  --sel: rgba(143, 164, 255, 0.26);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #fafafa;
-    --primary: #3b82f6;
-    --primary-hover: #60a5fa;
-    --muted: #9ca3af;
-    --border: #27272a;
-    --card: #18181b;
+/* Light values live in one block, applied from two selectors: the system
+   preference when the user has not chosen, and the explicit choice. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f3f4f8;
+    --side: #eceef5;
+    --panel: #ffffff;
+    --field: #ffffff;
+    --ink: #1b1e2b;
+    --mut: #5e6577;
+    --line: #dee1eb;
+    --line-soft: #e7e9f1;
+    --line-strong: #c3c8d8;
+    --acc: #4356c2;
+    --acc-ink: #ffffff;
+    --acc-soft: rgba(67, 86, 194, 0.1);
+    --acc-hover: #3849a8;
+    --acc-press: #2f3d8f;
+    --nav-on: #ffffff;
+    --ok: #116848;
+    --ok-bg: rgba(17, 104, 72, 0.1);
+    --run: #7a570f;
+    --run-bg: rgba(122, 87, 15, 0.12);
+    --bad: #b23c38;
+    --bad-bg: rgba(178, 60, 56, 0.1);
+    --warn-line: rgba(122, 87, 15, 0.35);
+    --scrim: rgba(27, 30, 43, 0.35);
+    --shadow-overlay: 0 16px 48px rgba(27, 30, 43, 0.25);
+    --hover: rgba(27, 30, 43, 0.05);
+    --press: rgba(27, 30, 43, 0.085);
+    --sel: rgba(67, 86, 194, 0.2);
   }
 }
 
+:root[data-theme="light"] {
+  --bg: #f3f4f8;
+  --side: #eceef5;
+  --panel: #ffffff;
+  --field: #ffffff;
+  --ink: #1b1e2b;
+  --mut: #5e6577;
+  --line: #dee1eb;
+  --line-soft: #e7e9f1;
+  --line-strong: #c3c8d8;
+  --acc: #4356c2;
+  --acc-ink: #ffffff;
+  --acc-soft: rgba(67, 86, 194, 0.1);
+  --acc-hover: #3849a8;
+  --acc-press: #2f3d8f;
+  --nav-on: #ffffff;
+  --ok: #116848;
+  --ok-bg: rgba(17, 104, 72, 0.1);
+  --run: #7a570f;
+  --run-bg: rgba(122, 87, 15, 0.12);
+  --bad: #b23c38;
+  --bad-bg: rgba(178, 60, 56, 0.1);
+  --warn-line: rgba(122, 87, 15, 0.35);
+  --scrim: rgba(27, 30, 43, 0.35);
+  --shadow-overlay: 0 16px 48px rgba(27, 30, 43, 0.25);
+  --hover: rgba(27, 30, 43, 0.05);
+  --press: rgba(27, 30, 43, 0.085);
+  --sel: rgba(67, 86, 194, 0.2);
+}
+
+/* Density is a user setting. It changes the vertical rhythm and nothing
+   else: no type sizes, no horizontal measure, no colours. Reading size is
+   a separate control because shrinking the interface and shrinking the
+   prose you are trying to read are different wishes. */
+:root[data-density="compact"] {
+  --row-y: var(--space-md);
+  --item-y: var(--space-lg);
+  --sec-gap: var(--space-3xl);
+  --body-pad: var(--space-xl);
+  --bar-h: 32px;
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* Own the default margins rather than trusting a reset. Every gap in the
+   app is then the gap that ships, with nothing left to collapse. */
+h1, h2, h3, h4, h5, h6, p, pre, figure, dl, dd {
+  margin: 0;
+}
+
+ul, ol {
+  margin: 0;
+  padding: 0;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: system-ui, -apple-system, sans-serif;
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-instrument-sans), system-ui, sans-serif;
+  font-size: var(--text-md);
+  line-height: var(--leading-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Browser surfaces carry the design too. */
+::selection {
+  background: var(--sel);
+  color: var(--ink);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: var(--radius-full);
+  border: 3px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--line-strong);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
 }
