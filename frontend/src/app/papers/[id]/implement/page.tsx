@@ -1,15 +1,43 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 
+import {
+  Blank,
+  Body,
+  Button,
+  Cite,
+  CodeBlock,
+  Empty,
+  Input,
+  Notice,
+  Num,
+  PageHeader,
+  PageSkeleton,
+  Panel,
+  PanelBody,
+  PlainList,
+  Provenance,
+  Section,
+  SectionHead,
+  Segmented,
+  Step,
+  StatusPill,
+  Tag,
+  Toolbar,
+  TopBar,
+  WarnPanel,
+  Working,
+} from "@/components";
+import type { TagTone } from "@/components";
 import { getApiErrorMessage } from "@/lib/api-errors";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 type TargetFramework = "pytorch" | "generic-python";
 type GapSeverity = "low" | "medium" | "high";
-type TabKey = "summary" | "algorithm" | "gaps" | "pseudocode" | "code" | "test";
 
 interface Paper {
   id: string;
@@ -79,24 +107,15 @@ interface SaveImplementationResponse {
   created_at: string;
 }
 
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "summary", label: "Summary" },
-  { key: "algorithm", label: "Algorithm" },
-  { key: "gaps", label: "Gaps" },
-  { key: "pseudocode", label: "Pseudocode" },
-  { key: "code", label: "Code" },
-  { key: "test", label: "Test Plan" },
+const FRAMEWORK_OPTIONS: { value: TargetFramework; label: string }[] = [
+  { value: "pytorch", label: "PyTorch" },
+  { value: "generic-python", label: "Plain Python" },
 ];
 
-const FRAMEWORK_LABELS: Record<TargetFramework, string> = {
-  pytorch: "PyTorch",
-  "generic-python": "Generic Python",
-};
-
-const SEVERITY_STYLES: Record<GapSeverity, string> = {
-  low: "border-[var(--border)] bg-[var(--card)] text-[var(--muted)]",
-  medium: "border-amber-500/20 bg-amber-500/10 text-amber-600",
-  high: "border-red-500/20 bg-red-500/10 text-red-500",
+const SEVERITY_TONES: Record<GapSeverity, TagTone> = {
+  high: "high",
+  medium: "med",
+  low: "quiet",
 };
 
 function createDefaultImplementationTitle(result: ImplementationResponse): string {
@@ -135,6 +154,23 @@ async function copyTextToClipboard(text: string) {
   }
 }
 
+/** Inputs and outputs, labelled inline, as quiet chips. */
+function Io({ k, items }: { k: string; items: string[] }) {
+  if (items.length === 0) {
+    return null;
+  }
+  return (
+    <>
+      <span className="k">{k}</span>
+      {items.map((item, index) => (
+        <Tag key={`${item}-${index}`} tone="quiet">
+          {item}
+        </Tag>
+      ))}
+    </>
+  );
+}
+
 export default function PaperImplementationPage() {
   const params = useParams();
   const paperId = params.id as string;
@@ -147,7 +183,6 @@ export default function PaperImplementationPage() {
     useState<TargetFramework>("pytorch");
   const [implementationResult, setImplementationResult] =
     useState<ImplementationResponse | null>(null);
-  const [activeTab, setActiveTab] = useState<TabKey>("summary");
   const [generationLoading, setGenerationLoading] = useState(false);
   const [generationError, setGenerationError] = useState("");
   const [saveTitle, setSaveTitle] = useState("");
@@ -180,21 +215,7 @@ export default function PaperImplementationPage() {
     loadPaper();
   }, [paperId]);
 
-  const generatedCodeFiles = implementationResult?.starter_code ?? [];
   const generationDisabled = generationLoading || paperLoading || Boolean(paperError);
-
-  const generatedCounts = useMemo(() => {
-    if (!implementationResult) {
-      return null;
-    }
-
-    return {
-      steps: implementationResult.algorithm_steps.length,
-      gaps: implementationResult.assumptions_and_gaps.length,
-      files: implementationResult.starter_code.length,
-      warnings: implementationResult.warnings.length,
-    };
-  }, [implementationResult]);
 
   const clearResultState = () => {
     setImplementationResult(null);
@@ -205,7 +226,6 @@ export default function PaperImplementationPage() {
     setSaveSuccess("");
     setLastSavedKey("");
     setCopyStatus({});
-    setActiveTab("summary");
   };
 
   const handleFocusChange = (value: string) => {
@@ -255,7 +275,6 @@ export default function PaperImplementationPage() {
       setImplementationResult(data);
       setSaveTitle(createDefaultImplementationTitle(data));
       setLastSavedKey("");
-      setActiveTab("summary");
     } catch (err) {
       setImplementationResult(null);
       setSaveTitle("");
@@ -274,14 +293,14 @@ export default function PaperImplementationPage() {
 
     const normalizedTitle = saveTitle.trim();
     if (!normalizedTitle) {
-      setSaveError("Implementation title is required.");
+      setSaveError("Give this plan a title before saving.");
       setSaveSuccess("");
       return;
     }
 
     const saveKey = createSaveKey(implementationResult, normalizedTitle);
     if (saveKey === lastSavedKey) {
-      setSaveError("This implementation result is already saved with that title.");
+      setSaveError("This plan is already saved under that title.");
       setSaveSuccess("");
       return;
     }
@@ -308,7 +327,7 @@ export default function PaperImplementationPage() {
 
       const data: SaveImplementationResponse = await res.json();
       setSaveTitle(data.title);
-      setSaveSuccess(`Saved implementation as "${data.title}".`);
+      setSaveSuccess(`Saved to your library as "${data.title}".`);
       setLastSavedKey(saveKey);
     } catch (err) {
       setSaveError(
@@ -320,8 +339,6 @@ export default function PaperImplementationPage() {
   };
 
   const handleCopyFile = async (file: StarterCodeFileResponse) => {
-    setCopyStatus((current) => ({ ...current, [file.path]: "Copying..." }));
-
     try {
       await copyTextToClipboard(file.content);
       setCopyStatus((current) => ({ ...current, [file.path]: "Copied" }));
@@ -339,136 +356,331 @@ export default function PaperImplementationPage() {
 
   if (paperLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
-      </div>
+      <>
+        <TopBar crumb={<b>Implement</b>} />
+        <Body>
+          <PageSkeleton />
+        </Body>
+      </>
     );
   }
 
   if (paperError || !paper) {
     return (
-      <div className="mx-auto min-h-screen max-w-3xl px-6 py-10">
-        <a
-          href="/"
-          className="text-sm text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
-        >
-          &larr; Home
-        </a>
-        <div className="mt-8 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500">
-          {paperError || "Paper not found."}
-        </div>
-      </div>
+      <>
+        <TopBar crumb={<b>Implement</b>} />
+        <Body>
+          <Blank
+            kind="Cannot open"
+            title="That paper is not here"
+            actions={
+              <Link href="/library" className="btn ghost">
+                Back to library
+              </Link>
+            }
+          >
+            {paperError || "Paper not found."}
+          </Blank>
+        </Body>
+      </>
     );
   }
 
+  const result = implementationResult;
+
   return (
-    <div className="min-h-screen px-6 py-10">
-      <main className="mx-auto max-w-7xl space-y-8">
-        <div className="border-b border-[var(--border)] pb-8">
-          <a
-            href={`/papers/${paper.id}`}
-            className="text-sm text-[var(--muted)] transition-colors hover:text-[var(--foreground)]"
-          >
-            &larr; Paper
-          </a>
-          <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="min-w-0">
-              <h1 className="text-4xl font-bold tracking-tight">
-                Build Implementation
-              </h1>
-              <h2 className="mt-3 max-w-4xl text-xl font-semibold leading-snug">
-                {paper.title}
-              </h2>
-              {paper.authors && (
-                <p className="mt-2 text-sm text-[var(--muted)] line-clamp-2">
-                  {paper.authors}
-                </p>
-              )}
-            </div>
-
-            {generatedCounts && (
-              <div className="flex flex-wrap gap-2 text-sm">
-                <span className="rounded-full border border-[var(--border)] px-3 py-1.5 text-[var(--muted)]">
-                  {generatedCounts.steps} steps
-                </span>
-                <span className="rounded-full border border-[var(--border)] px-3 py-1.5 text-[var(--muted)]">
-                  {generatedCounts.gaps} gaps
-                </span>
-                <span className="rounded-full border border-[var(--border)] px-3 py-1.5 text-[var(--muted)]">
-                  {generatedCounts.files} files
-                </span>
-                <span className="rounded-full border border-[var(--border)] px-3 py-1.5 text-[var(--muted)]">
-                  {generatedCounts.warnings} warnings
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
-          <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-            <section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
-              <h2 className="text-lg font-semibold">Generation</h2>
-
-              <label
-                htmlFor="implementation-focus"
-                className="mt-5 block text-sm font-medium"
+    <>
+      <TopBar
+        crumb={
+          <>
+            <Link href="/library" className="lnk">
+              Library
+            </Link>{" "}
+            <span aria-hidden>/</span>{" "}
+            <Link href={`/papers/${paper.id}`} className="lnk">
+              {paper.title}
+            </Link>{" "}
+            <span aria-hidden>/</span> <b>Implement</b>
+          </>
+        }
+        end={
+          result ? (
+            <>
+              <StatusPill tone="ok">generated</StatusPill>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSaveImplementation}
+                disabled={saveLoading}
               >
-                Focus
-              </label>
-              <textarea
-                id="implementation-focus"
-                value={focus}
-                maxLength={1000}
-                onChange={(event) => handleFocusChange(event.target.value)}
-                placeholder="Optional: training loop, inference only, loss function"
-                rows={5}
-                disabled={generationLoading}
-                className="mt-2 w-full resize-y rounded-lg border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm leading-6 outline-none transition-colors placeholder:text-[var(--muted)] focus:border-[var(--primary)] disabled:opacity-60"
-              />
-
-              <div className="mt-5">
-                <h3 className="text-sm font-medium">Framework</h3>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  {(Object.keys(FRAMEWORK_LABELS) as TargetFramework[]).map(
-                    (framework) => (
-                      <button
-                        key={framework}
-                        onClick={() => handleFrameworkChange(framework)}
-                        disabled={generationLoading}
-                        className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                          targetFramework === framework
-                            ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)]"
-                            : "border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]"
-                        }`}
-                      >
-                        {FRAMEWORK_LABELS[framework]}
-                      </button>
-                    ),
-                  )}
-                </div>
-              </div>
-
-              {generationError && (
-                <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500">
-                  {generationError}
-                </div>
-              )}
-
-              <button
+                {saveLoading ? "Saving" : "Save plan"}
+              </Button>
+            </>
+          ) : undefined
+        }
+      />
+      <Body>
+        <PageHeader
+          title="Implementation plan"
+          sub={
+            <>
+              From {paper.title}
+              {paper.authors ? <Num> {paper.authors}</Num> : null}
+            </>
+          }
+          end={
+            result ? (
+              <Button
+                variant="ghost"
                 onClick={handleGenerateImplementation}
                 disabled={generationDisabled}
-                className="mt-5 w-full rounded-lg bg-[var(--primary)] px-4 py-3 font-medium text-white transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {generationLoading ? "Generating..." : "Generate Implementation"}
-              </button>
-            </section>
+                {generationLoading ? "Working" : "Regenerate"}
+              </Button>
+            ) : undefined
+          }
+        />
 
-            {implementationResult && (
-              <section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
-                <h2 className="text-lg font-semibold">Save</h2>
-                <input
-                  type="text"
+        <Section>
+          <Toolbar>
+            <Segmented
+              label="Target framework"
+              value={targetFramework}
+              onChange={handleFrameworkChange}
+              options={FRAMEWORK_OPTIONS}
+            />
+            <Input
+              value={focus}
+              maxLength={1000}
+              disabled={generationLoading}
+              onChange={(event) => handleFocusChange(event.target.value)}
+              placeholder="Focus, if you have one: training loop, inference only, the loss"
+              aria-label="Focus"
+            />
+            {!result ? (
+              <Button onClick={handleGenerateImplementation} disabled={generationDisabled}>
+                {generationLoading ? "Generating" : "Generate plan"}
+              </Button>
+            ) : null}
+          </Toolbar>
+          <Provenance>
+            Python. Written by the model from the paper&apos;s own text. It is a
+            starting point for your implementation, not a reference one, and it has
+            not been run.
+          </Provenance>
+          {generationError ? (
+            <div style={{ marginTop: "var(--space-lg)" }}>
+              <Notice tone="bad">{generationError}</Notice>
+            </div>
+          ) : null}
+        </Section>
+
+        {generationLoading ? (
+          <Section>
+            <Working>
+              Reading the method, pulling out steps, drafting files, and carrying
+              the caveats forward. This takes a few minutes.
+            </Working>
+          </Section>
+        ) : null}
+
+        {!result && !generationLoading ? (
+          <Section>
+            <Blank
+              kind="Nothing generated yet"
+              quiet
+              title="No plan for this paper yet"
+            >
+              Generating produces a summary, ordered algorithm steps with their
+              inputs and evidence, the assumptions the model had to make,
+              pseudocode, starter files, and a test plan. Nothing runs until you
+              ask for it.
+            </Blank>
+          </Section>
+        ) : null}
+
+        {result ? (
+          <>
+            {result.warnings.length > 0 ? (
+              <Section>
+                <WarnPanel
+                  title={
+                    result.warnings.length === 1
+                      ? "One claim could not be traced"
+                      : `${result.warnings.length} claims could not be traced`
+                  }
+                >
+                  {result.warnings.join(" ")}
+                </WarnPanel>
+              </Section>
+            ) : null}
+
+            <Section>
+              <SectionHead>Summary</SectionHead>
+              <div className="reading">
+                <p>{result.implementation_summary}</p>
+              </div>
+            </Section>
+
+            <Section className="col-narrow">
+              <SectionHead
+                end={
+                  <Num>
+                    {result.algorithm_steps.length} step
+                    {result.algorithm_steps.length === 1 ? "" : "s"}
+                  </Num>
+                }
+              >
+                Algorithm steps
+              </SectionHead>
+              {result.algorithm_steps.length === 0 ? (
+                <Empty>No grounded algorithm steps were returned.</Empty>
+              ) : (
+                result.algorithm_steps.map((step, index) => (
+                  <Step
+                    key={`${step.order}-${index}`}
+                    n={String(step.order).padStart(2, "0")}
+                    title={step.title}
+                  >
+                    <p>{step.description}</p>
+                    {step.inputs.length > 0 || step.outputs.length > 0 ? (
+                      <div className="io">
+                        <Io k="in" items={step.inputs} />
+                        <Io k="out" items={step.outputs} />
+                      </div>
+                    ) : null}
+                    {step.evidence.length > 0 ? (
+                      <Cite>{step.evidence.join(" · ")}</Cite>
+                    ) : null}
+                  </Step>
+                ))
+              )}
+            </Section>
+
+            <Section className="col-narrow">
+              <SectionHead
+                end={<Num>{result.assumptions_and_gaps.length} found</Num>}
+              >
+                Assumptions and gaps
+              </SectionHead>
+              {result.assumptions_and_gaps.length === 0 ? (
+                <Empty>The model reported no assumptions or gaps.</Empty>
+              ) : (
+                result.assumptions_and_gaps.map((gap, index) => (
+                  <div key={`${gap.category}-${index}`} className="gap-item">
+                    <div className="top">
+                      <b>{gap.category.replaceAll("_", " ")}</b>
+                      <Tag tone={SEVERITY_TONES[gap.severity]}>{gap.severity}</Tag>
+                    </div>
+                    <p>{gap.description}</p>
+                    {gap.evidence.length > 0 ? (
+                      <Cite>{gap.evidence.join(" · ")}</Cite>
+                    ) : null}
+                  </div>
+                ))
+              )}
+            </Section>
+
+            <Section className="col-narrow">
+              <SectionHead>Pseudocode</SectionHead>
+              {result.pseudocode ? (
+                <CodeBlock path="pseudocode" content={result.pseudocode} />
+              ) : (
+                <Empty>No pseudocode was returned.</Empty>
+              )}
+            </Section>
+
+            <Section className="col-narrow">
+              <SectionHead
+                end={
+                  <Num>
+                    {result.starter_code.length} file
+                    {result.starter_code.length === 1 ? "" : "s"}
+                  </Num>
+                }
+              >
+                Starter code
+              </SectionHead>
+              {result.starter_code.length === 0 ? (
+                <Empty>No starter files were returned.</Empty>
+              ) : (
+                result.starter_code.map((file) => (
+                  <CodeBlock
+                    key={file.path}
+                    path={file.path}
+                    purpose={file.purpose}
+                    content={file.content}
+                    end={
+                      <>
+                        {copyStatus[file.path] ? (
+                          <Notice
+                            tone={
+                              copyStatus[file.path] === "Copied" ? "quiet" : "bad"
+                            }
+                          >
+                            {copyStatus[file.path]}
+                          </Notice>
+                        ) : null}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleCopyFile(file)}
+                        >
+                          Copy
+                        </Button>
+                      </>
+                    }
+                  />
+                ))
+              )}
+            </Section>
+
+            <Section className="col-narrow">
+              <SectionHead>Before you run it</SectionHead>
+              {result.setup_notes.length === 0 ? (
+                <Empty>No setup notes were returned.</Empty>
+              ) : (
+                <PlainList items={result.setup_notes} />
+              )}
+            </Section>
+
+            <Section className="col-narrow">
+              <SectionHead>How to check it works</SectionHead>
+              {result.test_plan.length === 0 ? (
+                <Empty>No test plan was returned.</Empty>
+              ) : (
+                <PlainList items={result.test_plan} />
+              )}
+            </Section>
+
+            {result.source_sections.length > 0 ? (
+              <Section className="col-narrow">
+                <SectionHead end={<Num>{result.source_sections.length}</Num>}>
+                  Sections this was built from
+                </SectionHead>
+                <Panel>
+                  <PanelBody>
+                    {result.source_sections.map((section) => (
+                      <p key={section.id}>
+                        <b>{section.title}</b> {section.content_preview}
+                      </p>
+                    ))}
+                  </PanelBody>
+                </Panel>
+              </Section>
+            ) : null}
+
+            <Section className="col-narrow">
+              <SectionHead>Save this plan</SectionHead>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "var(--space-md)",
+                  alignItems: "flex-start",
+                  flexWrap: "wrap",
+                }}
+              >
+                <Input
                   value={saveTitle}
                   maxLength={1000}
                   disabled={saveLoading}
@@ -477,277 +689,28 @@ export default function PaperImplementationPage() {
                     setSaveError("");
                     setSaveSuccess("");
                   }}
-                  placeholder="Implementation title"
-                  className="mt-4 w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-4 py-2.5 text-sm outline-none transition-colors focus:border-[var(--primary)] disabled:opacity-60"
+                  placeholder="Title for this plan"
+                  invalid={Boolean(saveError)}
+                  style={{ flex: "1 1 320px" }}
                 />
-                <button
-                  onClick={handleSaveImplementation}
-                  disabled={saveLoading}
-                  className="mt-3 w-full rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm font-medium transition-colors hover:border-[var(--primary)]/30 hover:text-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {saveLoading ? "Saving..." : "Save Implementation"}
-                </button>
-                {saveError && <p className="mt-3 text-sm text-red-500">{saveError}</p>}
-                {saveSuccess && (
-                  <p className="mt-3 text-sm text-[var(--primary)]">{saveSuccess}</p>
-                )}
-              </section>
-            )}
-          </aside>
-
-          <section className="min-w-0 space-y-6">
-            {generationLoading ? (
-              <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-6 py-14">
-                <div className="mx-auto flex max-w-2xl flex-col items-center gap-4 text-center">
-                  <div className="h-7 w-7 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
-                  <div>
-                    <h2 className="text-xl font-semibold">
-                      Generating implementation scaffold
-                    </h2>
-                    <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
-                      Reading method evidence, extracting algorithm steps,
-                      drafting starter files, and carrying forward caveats.
-                    </p>
-                  </div>
-                </div>
+                <Button onClick={handleSaveImplementation} disabled={saveLoading}>
+                  {saveLoading ? "Saving" : "Save"}
+                </Button>
               </div>
-            ) : !implementationResult ? (
-              <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--card)] px-6 py-14 text-center">
-                <h2 className="text-xl font-semibold">No implementation generated</h2>
-                <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">
-                  Generate a grounded scaffold from the paper method, gaps, pseudocode,
-                  starter files, setup notes, and test checks.
-                </p>
-              </div>
-            ) : (
-              <>
-                {implementationResult.warnings.length > 0 && (
-                  <section className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-5">
-                    <h2 className="text-lg font-semibold text-amber-700">Warnings</h2>
-                    <ul className="mt-4 space-y-2 text-sm text-amber-700">
-                      {implementationResult.warnings.map((warning) => (
-                        <li
-                          key={warning}
-                          className="rounded-lg bg-[var(--background)]/70 px-4 py-3 leading-relaxed"
-                        >
-                          {warning}
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                )}
-
-                <div className="overflow-x-auto border-b border-[var(--border)]">
-                  <div className="flex min-w-max gap-2">
-                    {TABS.map((tab) => (
-                      <button
-                        key={tab.key}
-                        onClick={() => setActiveTab(tab.key)}
-                        className={`border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
-                          activeTab === tab.key
-                            ? "border-[var(--primary)] text-[var(--primary)]"
-                            : "border-transparent text-[var(--muted)] hover:text-[var(--foreground)]"
-                        }`}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
+              {saveError ? (
+                <div style={{ marginTop: "var(--space-md)" }}>
+                  <Notice tone="bad">{saveError}</Notice>
                 </div>
-
-                {activeTab === "summary" && (
-                  <section className="space-y-5">
-                    <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
-                      <h2 className="text-lg font-semibold">Summary</h2>
-                      <p className="mt-3 leading-7">
-                        {implementationResult.implementation_summary}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
-                      <h2 className="text-lg font-semibold">Source Sections</h2>
-                      {implementationResult.source_sections.length === 0 ? (
-                        <p className="mt-3 text-sm text-[var(--muted)]">
-                          No source sections were returned.
-                        </p>
-                      ) : (
-                        <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                          {implementationResult.source_sections.map((section) => (
-                            <article
-                              key={section.id}
-                              className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-4"
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <h3 className="font-semibold">{section.title}</h3>
-                                <span className="text-xs text-[var(--muted)]">
-                                  #{section.section_order}
-                                </span>
-                              </div>
-                              <p className="mt-2 text-sm leading-6 text-[var(--muted)] line-clamp-5">
-                                {section.content_preview}
-                              </p>
-                            </article>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </section>
-                )}
-
-                {activeTab === "algorithm" && (
-                  <section className="space-y-4">
-                    {implementationResult.algorithm_steps.length === 0 ? (
-                      <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5 text-sm text-[var(--muted)]">
-                        No grounded algorithm steps were returned.
-                      </div>
-                    ) : (
-                      implementationResult.algorithm_steps.map((step) => (
-                        <article
-                          key={`${step.order}-${step.title}`}
-                          className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5"
-                        >
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                            <div>
-                              <span className="text-xs font-semibold uppercase tracking-wide text-[var(--primary)]">
-                                Step {step.order}
-                              </span>
-                              <h2 className="mt-1 text-xl font-semibold">
-                                {step.title}
-                              </h2>
-                            </div>
-                          </div>
-                          <p className="mt-3 leading-7">{step.description}</p>
-                          <div className="mt-4 grid gap-4 md:grid-cols-3">
-                            <ListBlock title="Inputs" items={step.inputs} />
-                            <ListBlock title="Outputs" items={step.outputs} />
-                            <ListBlock title="Evidence" items={step.evidence} />
-                          </div>
-                        </article>
-                      ))
-                    )}
-                  </section>
-                )}
-
-                {activeTab === "gaps" && (
-                  <section className="grid gap-4 lg:grid-cols-2">
-                    {implementationResult.assumptions_and_gaps.length === 0 ? (
-                      <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5 text-sm text-[var(--muted)]">
-                        No assumptions or gaps were returned.
-                      </div>
-                    ) : (
-                      implementationResult.assumptions_and_gaps.map((gap, index) => (
-                        <article
-                          key={`${gap.category}-${index}`}
-                          className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5"
-                        >
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="rounded-full bg-[var(--primary)]/10 px-2.5 py-1 text-xs font-medium text-[var(--primary)]">
-                              {gap.category.replaceAll("_", " ")}
-                            </span>
-                            <span
-                              className={`rounded-full border px-2.5 py-1 text-xs font-medium ${SEVERITY_STYLES[gap.severity]}`}
-                            >
-                              {gap.severity} severity
-                            </span>
-                          </div>
-                          <p className="mt-4 leading-7">{gap.description}</p>
-                          <ListBlock title="Evidence" items={gap.evidence} />
-                        </article>
-                      ))
-                    )}
-                  </section>
-                )}
-
-                {activeTab === "pseudocode" && (
-                  <section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
-                    <h2 className="text-lg font-semibold">Pseudocode</h2>
-                    <pre className="mt-4 overflow-x-auto rounded-lg bg-[var(--background)] p-4 text-sm leading-6">
-                      <code>{implementationResult.pseudocode}</code>
-                    </pre>
-                  </section>
-                )}
-
-                {activeTab === "code" && (
-                  <section className="space-y-5">
-                    {generatedCodeFiles.length === 0 ? (
-                      <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5 text-sm text-[var(--muted)]">
-                        No starter code files were returned.
-                      </div>
-                    ) : (
-                      generatedCodeFiles.map((file) => (
-                        <article
-                          key={file.path}
-                          className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]"
-                        >
-                          <div className="flex flex-col gap-3 border-b border-[var(--border)] px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="min-w-0">
-                              <h2 className="font-semibold">{file.path}</h2>
-                              <p className="mt-1 text-sm text-[var(--muted)]">
-                                {file.purpose}
-                              </p>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-3">
-                              {copyStatus[file.path] && (
-                                <span className="text-xs text-[var(--muted)]">
-                                  {copyStatus[file.path]}
-                                </span>
-                              )}
-                              <button
-                                onClick={() => handleCopyFile(file)}
-                                className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm font-medium transition-colors hover:border-[var(--primary)]/30 hover:text-[var(--primary)]"
-                              >
-                                Copy
-                              </button>
-                            </div>
-                          </div>
-                          <pre className="overflow-x-auto bg-[var(--background)] p-5 text-sm leading-6">
-                            <code>{file.content}</code>
-                          </pre>
-                        </article>
-                      ))
-                    )}
-                  </section>
-                )}
-
-                {activeTab === "test" && (
-                  <section className="grid gap-5 lg:grid-cols-2">
-                    <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
-                      <h2 className="text-lg font-semibold">Setup Notes</h2>
-                      <ListBlock items={implementationResult.setup_notes} />
-                    </div>
-                    <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
-                      <h2 className="text-lg font-semibold">Test Plan</h2>
-                      <ListBlock items={implementationResult.test_plan} />
-                    </div>
-                  </section>
-                )}
-              </>
-            )}
-          </section>
-        </div>
-      </main>
-    </div>
-  );
-}
-
-function ListBlock({ title, items }: { title?: string; items: string[] }) {
-  return (
-    <div className={title ? "" : "mt-4"}>
-      {title && <h3 className="text-sm font-semibold">{title}</h3>}
-      {items.length === 0 ? (
-        <p className="mt-2 text-sm text-[var(--muted)]">None returned.</p>
-      ) : (
-        <ul className="mt-2 space-y-2 text-sm">
-          {items.map((item, index) => (
-            <li
-              key={`${item}-${index}`}
-              className="rounded-lg bg-[var(--background)] px-3 py-2 leading-6 text-[var(--muted)]"
-            >
-              {item}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+              ) : null}
+              {saveSuccess ? (
+                <div style={{ marginTop: "var(--space-md)" }}>
+                  <Notice>{saveSuccess}</Notice>
+                </div>
+              ) : null}
+            </Section>
+          </>
+        ) : null}
+      </Body>
+    </>
   );
 }

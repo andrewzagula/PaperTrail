@@ -1,8 +1,29 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 
+import {
+  Blank,
+  Body,
+  Button,
+  Empty,
+  Item,
+  Notice,
+  Num,
+  PageSkeleton,
+  Panel,
+  PanelHead,
+  Score,
+  Section,
+  SectionHead,
+  StatusPill,
+  TopBar,
+  WarnPanel,
+  Working,
+  toneFor,
+} from "@/components";
 import { getApiErrorMessage } from "@/lib/api-errors";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -46,17 +67,10 @@ const FAILED_STAGE_LABELS: Record<string, string> = {
 };
 
 type IngestStatus = "loading" | "done" | "error";
-type IngestingState = Record<
-  string,
-  {
-    status: IngestStatus;
-    message?: string;
-  }
->;
+type IngestingState = Record<string, { status: IngestStatus; message?: string }>;
 
 export default function DiscoverResultsPage() {
   const params = useParams();
-  const router = useRouter();
   const runId = params.id as string;
 
   const [run, setRun] = useState<DiscoveryRun | null>(null);
@@ -117,10 +131,9 @@ export default function DiscoverResultsPage() {
   const handleIngest = async (resultId: string) => {
     setIngesting((prev) => ({ ...prev, [resultId]: { status: "loading" } }));
     try {
-      const res = await fetch(
-        `${API_URL}/discover/${runId}/ingest/${resultId}`,
-        { method: "POST" }
-      );
+      const res = await fetch(`${API_URL}/discover/${runId}/ingest/${resultId}`, {
+        method: "POST",
+      });
       if (!res.ok) {
         throw new Error(
           await getApiErrorMessage(res, "Failed to ingest this paper."),
@@ -133,7 +146,7 @@ export default function DiscoverResultsPage() {
         return {
           ...prev,
           results: prev.results.map((r) =>
-            r.id === resultId ? { ...r, paper_id: data.paper_id } : r
+            r.id === resultId ? { ...r, paper_id: data.paper_id } : r,
           ),
         };
       });
@@ -151,276 +164,251 @@ export default function DiscoverResultsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="w-8 h-8 border-2 border-[var(--primary)] border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-[var(--muted)]">Loading...</p>
-        </div>
-      </div>
+      <>
+        <TopBar crumb={<b>Discovery run</b>} />
+        <Body>
+          <PageSkeleton />
+        </Body>
+      </>
     );
   }
 
   if (loadError && !run) {
     return (
-      <div className="min-h-screen p-8 max-w-3xl mx-auto">
-        <a
-          href="/"
-          className="text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
-        >
-          &larr; Back to home
-        </a>
-        <div className="mt-8 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500">
-          {loadError}
-        </div>
-        <button
-          onClick={handleRetryLoad}
-          className="mt-4 rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium transition-colors hover:border-[var(--primary)]/30 hover:text-[var(--primary)]"
-        >
-          Retry
-        </button>
-      </div>
+      <>
+        <TopBar crumb={<b>Discovery run</b>} />
+        <Body>
+          <Blank
+            kind="Cannot open"
+            title="That discovery run could not be loaded"
+            actions={
+              <>
+                <Button onClick={handleRetryLoad}>Try again</Button>
+                <Link href="/" className="btn ghost">
+                  Back to Discover
+                </Link>
+              </>
+            }
+          >
+            {loadError}
+          </Blank>
+        </Body>
+      </>
     );
   }
 
   if (!run) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-[var(--muted)]">Discovery run not found.</p>
-      </div>
+      <>
+        <TopBar crumb={<b>Discovery run</b>} />
+        <Body>
+          <Blank kind="Not here" title="That discovery run does not exist" />
+        </Body>
+      </>
     );
   }
 
   const isRunning = run.status === "pending" || run.status === "running";
+  const budget = run.budget_used;
+  const queries = run.generated_queries ?? [];
 
   return (
-    <div className="min-h-screen px-6 py-12">
-      <div className="max-w-3xl mx-auto space-y-8">
-        <div>
-          <a
-            href="/"
-            className="text-sm text-[var(--muted)] hover:text-[var(--primary)] transition-colors"
-          >
-            &larr; Back to home
-          </a>
-          <h1 className="text-3xl font-bold mt-4 mb-2">{run.question}</h1>
+    <>
+      <TopBar
+        crumb={
+          <>
+            <Link href="/" className="lnk">
+              Discover
+            </Link>{" "}
+            <span aria-hidden>/</span> <b>Run {run.id.slice(0, 4)}</b>
+          </>
+        }
+        end={<StatusPill tone={toneFor(run.status)}>{run.status}</StatusPill>}
+      />
+      <Body>
+        <h1 className="page-title" style={{ maxWidth: "60ch" }}>
+          {run.question}
+        </h1>
+        <p className="page-sub">
+          <Num>
+            {run.results.length} result{run.results.length === 1 ? "" : "s"}
+            {queries.length > 0
+              ? ` from ${queries.length} quer${queries.length === 1 ? "y" : "ies"}`
+              : ""}
+            {budget?.total_papers_fetched != null
+              ? ` · ${budget.total_papers_fetched} fetched, ${budget.papers_ranked ?? 0} ranked`
+              : ""}
+          </Num>
+        </p>
 
-          {loadError && (
-            <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500">
-              <p>{loadError}</p>
-              <button
-                onClick={handleRetryLoad}
-                className="mt-3 rounded-lg border border-red-500/30 px-3 py-1.5 font-medium transition-colors hover:bg-red-500/10"
-              >
-                Retry refresh
-              </button>
+        {loadError ? (
+          <Section>
+            <WarnPanel title="The last refresh failed">
+              {loadError} The results below may be out of date.
+            </WarnPanel>
+            <div style={{ marginTop: "var(--space-lg)" }}>
+              <Button variant="ghost" size="sm" onClick={handleRetryLoad}>
+                Refresh
+              </Button>
             </div>
-          )}
+          </Section>
+        ) : null}
 
-          {isRunning && (
-            <div className="flex items-center gap-3 mt-4 p-4 rounded-lg border border-[var(--border)] bg-[var(--card)]">
-              <div className="w-5 h-5 border-2 border-[var(--primary)] border-t-transparent rounded-full animate-spin" />
-              <div>
-                <p className="font-medium">
-                  {run.status === "pending"
-                    ? "Starting discovery..."
-                    : "Searching and ranking papers..."}
-                </p>
-                <p className="text-sm text-[var(--muted)]">
-                  Generating queries, searching arXiv, and ranking by relevance
-                </p>
-              </div>
-            </div>
-          )}
+        {isRunning ? (
+          <Section>
+            <Working>
+              {run.status === "pending"
+                ? "Starting. Queries first, then arXiv, then ranking."
+                : "Searching arXiv and ranking what comes back."}
+            </Working>
+          </Section>
+        ) : null}
 
-          {run.status === "failed" && (
-            <div className="mt-4 p-4 rounded-lg border border-red-500/30 bg-red-500/5">
-              <p className="font-medium text-red-500">
-                Discovery failed
-                {run.budget_used?.failed_stage &&
-                  FAILED_STAGE_LABELS[run.budget_used.failed_stage] &&
-                  ` ${FAILED_STAGE_LABELS[run.budget_used.failed_stage]}`}
-              </p>
-              {run.error_message && (
-                <p className="text-sm text-[var(--muted)] mt-1">
-                  {run.error_message}
-                </p>
-              )}
-              {run.generated_queries && run.generated_queries.length > 0 && (
-                <p className="text-sm text-[var(--muted)] mt-1">
-                  The search queries were generated before the failure and are
-                  shown below.
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-        {run.generated_queries && run.generated_queries.length > 0 && (
-          <div>
-            <button
-              onClick={() => setShowQueries(!showQueries)}
-              className="text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
+        {run.status === "failed" ? (
+          <Section>
+            <WarnPanel
+              title={`This run stopped${
+                run.budget_used?.failed_stage &&
+                FAILED_STAGE_LABELS[run.budget_used.failed_stage]
+                  ? ` ${FAILED_STAGE_LABELS[run.budget_used.failed_stage]}`
+                  : ""
+              }`}
             >
-              {showQueries ? "Hide" : "Show"} generated queries (
-              {run.generated_queries.length})
-            </button>
-            {showQueries && (
-              <div className="mt-2 p-4 rounded-lg border border-[var(--border)] bg-[var(--card)] space-y-2">
-                {run.generated_queries.map((q, i) => (
-                  <div
-                    key={i}
-                    className="text-sm font-mono text-[var(--muted)]"
+              {run.error_message || "No reason was recorded."}
+              {queries.length > 0
+                ? " The queries below were generated before it stopped, so you can see how far it got."
+                : ""}
+            </WarnPanel>
+          </Section>
+        ) : null}
+
+        {queries.length > 0 ? (
+          <Section className="col-narrow">
+            <Panel>
+              <PanelHead
+                end={
+                  <button
+                    type="button"
+                    className="lnk"
+                    onClick={() => setShowQueries((current) => !current)}
+                    style={{ background: "none", border: 0, font: "inherit" }}
                   >
-                    {i + 1}. {q}
-                  </div>
-                ))}
-                {run.budget_used?.total_papers_fetched != null && (
-                  <p className="text-xs text-[var(--muted)] pt-2 border-t border-[var(--border)]">
-                    {run.budget_used.total_papers_fetched} papers fetched,{" "}
-                    {run.budget_used.papers_ranked} ranked
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {run.warnings.length > 0 && (
-          <section className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
-            <h2 className="font-semibold text-amber-700">
-              Discovery quality notes
-            </h2>
-            <p className="mt-1 text-[var(--muted)]">
-              These notes flag weak coverage or low confidence. Results are
-              relevance-ranked arXiv matches, not an exhaustive literature
-              review.
-            </p>
-            <ul className="mt-3 space-y-1 text-amber-700">
-              {run.warnings.map((warning) => (
-                <li key={warning}>{warning}</li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {run.status === "complete" && run.results.length === 0 && (
-          <p className="text-[var(--muted)]">
-            No relevant papers found. Try rephrasing your question.
-          </p>
-        )}
-
-        {run.results.length > 0 && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold">
-              Results ({run.results.length})
-            </h2>
-            {run.results.map((result) => {
-                const ingestState = ingesting[result.id];
-
-                return (
-                  <div
-                    key={result.id}
-                    className="p-5 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-3"
-                  >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-mono px-2 py-0.5 rounded bg-[var(--primary)]/10 text-[var(--primary)]">
-                        #{result.rank_order}
+                    {showQueries ? "Hide" : "Show"}
+                  </button>
+                }
+              >
+                Generated queries
+              </PanelHead>
+              {showQueries
+                ? queries.map((query, index) => (
+                    <div key={index} className="row mono">
+                      <span>
+                        {index + 1}. {query}
                       </span>
-                      {result.relevance_score !== null && (
-                        <span
-                          className={`text-xs font-medium px-2 py-0.5 rounded ${
-                            result.relevance_score >= 0.7
-                              ? "bg-green-500/10 text-green-600"
-                              : result.relevance_score >= 0.4
-                                ? "bg-yellow-500/10 text-yellow-600"
-                                : "bg-red-500/10 text-red-500"
-                          }`}
-                        >
-                          {(result.relevance_score * 100).toFixed(0)}% relevant
-                        </span>
-                      )}
                     </div>
-                    <h3 className="font-semibold leading-snug">
-                      {result.title}
-                    </h3>
-                    {result.authors && (
-                      <p className="text-sm text-[var(--muted)] mt-1 line-clamp-1">
-                        {result.authors}
-                      </p>
-                    )}
-                  </div>
-                </div>
+                  ))
+                : null}
+            </Panel>
+          </Section>
+        ) : null}
 
-                {result.relevance_reason && (
-                  <p className="text-sm text-[var(--muted)] italic">
-                    {result.relevance_reason}
-                  </p>
-                )}
+        {run.warnings.length > 0 ? (
+          <Section className="col-narrow">
+            <WarnPanel title="Coverage notes">
+              {run.warnings.join(" ")} These are relevance-ranked arXiv matches,
+              not an exhaustive review of the literature.
+            </WarnPanel>
+          </Section>
+        ) : null}
 
-                {result.abstract && (
-                  <p className="text-sm text-[var(--muted)] line-clamp-3">
-                    {result.abstract}
-                  </p>
-                )}
+        <Section className="col-narrow">
+          <SectionHead>
+            {run.results.length === 0
+              ? "Results"
+              : `${run.results.length} result${run.results.length === 1 ? "" : "s"}`}
+          </SectionHead>
 
-                <div className="flex items-center gap-3 pt-1">
-                  {result.published && (
-                    <span className="text-xs text-[var(--muted)]">
-                      {result.published}
+          {run.results.length === 0 ? (
+            run.status === "complete" ? (
+              <Empty>
+                Nothing came back for this question. A narrower or differently
+                worded question usually helps.
+              </Empty>
+            ) : (
+              <Empty>No results yet.</Empty>
+            )
+          ) : (
+            run.results.map((result) => {
+              const state = ingesting[result.id];
+              const score =
+                result.relevance_score !== null
+                  ? `${(result.relevance_score * 100).toFixed(0)}% relevant`
+                  : null;
+
+              return (
+                <Item
+                  key={result.id}
+                  index={String(result.rank_order).padStart(2, "0")}
+                >
+                  {score ? (
+                    <div className="toprow">
+                      <Score weak={(result.relevance_score ?? 0) < 0.7}>
+                        {score}
+                      </Score>
+                    </div>
+                  ) : null}
+                  <h3>{result.title}</h3>
+                  {result.authors ? <p className="auth">{result.authors}</p> : null}
+                  {result.relevance_reason ? (
+                    <p className="why">{result.relevance_reason}</p>
+                  ) : null}
+                  {result.abstract ? <p className="abs">{result.abstract}</p> : null}
+                  <div className="foot">
+                    {result.published ? <Num>{result.published}</Num> : null}
+                    <Num>
+                      <a
+                        href={`https://arxiv.org/abs/${result.arxiv_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="lnk"
+                      >
+                        arXiv:{result.arxiv_id}
+                      </a>
+                    </Num>
+                    <span style={{ marginLeft: "auto" }}>
+                      {result.paper_id ? (
+                        <Link
+                          href={`/papers/${result.paper_id}`}
+                          className="btn soft sm"
+                        >
+                          View in library
+                        </Link>
+                      ) : state?.status === "loading" ? (
+                        <Working>Adding</Working>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant={state?.status === "error" ? "ghost" : "primary"}
+                          onClick={() => handleIngest(result.id)}
+                        >
+                          {state?.status === "error" ? "Try again" : "Add to library"}
+                        </Button>
+                      )}
                     </span>
-                  )}
-                  <a
-                    href={`https://arxiv.org/abs/${result.arxiv_id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-[var(--primary)] hover:underline"
-                  >
-                    arXiv:{result.arxiv_id}
-                  </a>
-
-                  {result.paper_id ? (
-                    <button
-                      onClick={() =>
-                        router.push(`/papers/${result.paper_id}`)
-                      }
-                      className="ml-auto text-sm px-4 py-1.5 rounded-lg bg-green-500/10 text-green-600 font-medium"
-                    >
-                      View Paper
-                    </button>
-                  ) : ingestState?.status === "loading" ? (
-                    <span className="ml-auto inline-flex items-center gap-2 text-sm text-[var(--muted)]">
-                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
-                      Ingesting...
-                    </span>
-                  ) : ingestState?.status === "error" ? (
-                    <button
-                      onClick={() => handleIngest(result.id)}
-                      className="ml-auto text-sm px-4 py-1.5 rounded-lg bg-red-500/10 text-red-500 font-medium"
-                    >
-                      Retry
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleIngest(result.id)}
-                      className="ml-auto text-sm px-4 py-1.5 rounded-lg bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white font-medium transition-colors"
-                    >
-                      Ingest
-                    </button>
-                  )}
-                </div>
-
-                {ingestState?.status === "error" && (
-                  <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500">
-                    {ingestState.message || "Failed to ingest this paper."}
                   </div>
-                )}
-              </div>
-                );
-              })}
-          </div>
-        )}
-      </div>
-    </div>
+                  {state?.status === "error" ? (
+                    <div className="fixline">
+                      <Notice tone="bad">
+                        {state.message || "Failed to add this paper."}
+                      </Notice>
+                    </div>
+                  ) : null}
+                </Item>
+              );
+            })
+          )}
+        </Section>
+      </Body>
+    </>
   );
 }

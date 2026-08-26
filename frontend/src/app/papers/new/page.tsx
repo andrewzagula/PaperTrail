@@ -1,30 +1,62 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { UploadSimple } from "@phosphor-icons/react";
 
+import {
+  Body,
+  Button,
+  Dropzone,
+  Field,
+  Input,
+  Notice,
+  Provenance,
+  Section,
+  TopBar,
+  Working,
+} from "@/components";
 import { getApiErrorMessage } from "@/lib/api-errors";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 type PendingAction = "arxiv" | "pdf";
+
+/* Accepts a full link, a bare id, or an id with a version suffix, because
+   all three are things a person actually has on their clipboard. */
+const ARXIV_PATTERN = /(arxiv\.org\/(abs|pdf)\/)?\d{4}\.\d{4,5}(v\d+)?/i;
 
 export default function NewPaper() {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [arxivUrl, setArxivUrl] = useState("");
+  const [arxivError, setArxivError] = useState("");
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
+  const [droppedName, setDroppedName] = useState("");
 
   const loading = pendingAction !== null;
   const loadingMessage =
     pendingAction === "arxiv"
-      ? "Fetching arXiv metadata, downloading the PDF, and preparing the paper..."
-      : "Reading the PDF, extracting text, splitting sections, and preparing embeddings...";
+      ? "Fetching the metadata, downloading the PDF, splitting it into sections, and embedding it."
+      : "Reading the PDF, extracting the text, splitting it into sections, and embedding it.";
 
-  async function handleArxivSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!arxivUrl.trim() || loading) return;
+  async function handleArxivSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    const value = arxivUrl.trim();
+    if (!value || loading) return;
 
+    if (!ARXIV_PATTERN.test(value)) {
+      setArxivError(
+        "That is not an arXiv address. Paste a link like arxiv.org/abs/1706.03762, or just the id on its own.",
+      );
+      return;
+    }
+
+    setArxivError("");
     setPendingAction("arxiv");
     setError("");
 
@@ -32,20 +64,17 @@ export default function NewPaper() {
       const res = await fetch(`${API_URL}/papers/ingest/arxiv`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ arxiv_url: arxivUrl }),
+        body: JSON.stringify({ arxiv_url: value }),
       });
 
       if (!res.ok) {
-        throw new Error(
-          await getApiErrorMessage(res, "Failed to ingest paper"),
-        );
+        throw new Error(await getApiErrorMessage(res, "Failed to add this paper"));
       }
 
       const data = await res.json();
       router.push(`/papers/${data.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
       setPendingAction(null);
     }
   }
@@ -54,12 +83,13 @@ export default function NewPaper() {
     if (loading) return;
 
     if (!file.name.toLowerCase().endsWith(".pdf")) {
-      setError("Please upload a PDF file");
+      setError(`${file.name} is not a PDF. Only PDF files can be read.`);
       return;
     }
 
     setPendingAction("pdf");
     setError("");
+    setDroppedName(file.name);
 
     try {
       const formData = new FormData();
@@ -71,111 +101,115 @@ export default function NewPaper() {
       });
 
       if (!res.ok) {
-        throw new Error(
-          await getApiErrorMessage(res, "Failed to ingest paper"),
-        );
+        throw new Error(await getApiErrorMessage(res, "Failed to add this paper"));
       }
 
       const data = await res.json();
       router.push(`/papers/${data.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
       setPendingAction(null);
     }
   }
 
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
+  function handleDrop(event: React.DragEvent) {
+    event.preventDefault();
     setDragOver(false);
-    const file = e.dataTransfer.files[0];
+    const file = event.dataTransfer.files[0];
     if (file) handleFileUpload(file);
   }
 
   return (
-    <div className="min-h-screen p-8 max-w-2xl mx-auto">
-      <a
-        href="/"
-        className="text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
-      >
-        &larr; Back
-      </a>
-
-      <h1 className="text-3xl font-bold mt-6 mb-2">Add a Paper</h1>
-      <p className="text-[var(--muted)] mb-8">
-        Paste an arXiv link or upload a PDF to get started.
-      </p>
-
-      {error && (
-        <div className="mb-6 p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-          {error}
-        </div>
-      )}
-      <form onSubmit={handleArxivSubmit} className="mb-8">
-        <label className="block text-sm font-medium mb-2">arXiv URL</label>
-        <div className="flex gap-3">
-          <input
-            type="text"
-            value={arxivUrl}
-            onChange={(e) => setArxivUrl(e.target.value)}
-            placeholder="https://arxiv.org/abs/2301.00001"
-            disabled={loading}
-            className="flex-1 px-4 py-3 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] disabled:opacity-50"
-          />
-          <button
-            type="submit"
-            disabled={loading || !arxivUrl.trim()}
-            className="px-6 py-3 bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? "Processing..." : "Ingest"}
-          </button>
-        </div>
-      </form>
-
-      <div className="flex items-center gap-4 mb-8">
-        <div className="flex-1 h-px bg-[var(--border)]" />
-        <span className="text-sm text-[var(--muted)]">or</span>
-        <div className="flex-1 h-px bg-[var(--border)]" />
-      </div>
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={handleDrop}
-        className={`border-2 border-dashed rounded-xl p-12 text-center transition-colors ${
-          dragOver
-            ? "border-[var(--primary)] bg-[var(--primary)]/5"
-            : "border-[var(--border)]"
-        } ${loading ? "opacity-50 pointer-events-none" : ""}`}
-      >
-        <p className="text-[var(--muted)] mb-4">
-          Drag and drop a PDF here, or click to browse
+    <>
+      <TopBar
+        crumb={
+          <>
+            <Link href="/library" className="lnk">
+              Library
+            </Link>{" "}
+            <span aria-hidden>/</span> <b>Add paper</b>
+          </>
+        }
+      />
+      <Body>
+        <h1 className="page-title">Add a paper</h1>
+        <p className="page-sub">
+          Two ways in. Either one ends with the paper fetched, split into
+          sections, and embedded for chat.
         </p>
-        <label className="inline-block px-6 py-3 bg-[var(--card)] border border-[var(--border)] rounded-lg cursor-pointer hover:bg-[var(--border)] transition-colors">
-          <span className="font-medium">Choose PDF</span>
+
+        <Section>
+          <form onSubmit={handleArxivSubmit}>
+            <Field label="arXiv link or id" error={arxivError || undefined}>
+              <div className="line">
+                <Input
+                  value={arxivUrl}
+                  onChange={(event) => {
+                    setArxivUrl(event.target.value);
+                    setArxivError("");
+                  }}
+                  placeholder="https://arxiv.org/abs/1706.03762"
+                  disabled={loading}
+                  invalid={Boolean(arxivError)}
+                />
+                <Button type="submit" disabled={loading || !arxivUrl.trim()}>
+                  {pendingAction === "arxiv" ? "Fetching" : "Fetch"}
+                </Button>
+              </div>
+            </Field>
+          </form>
+
+          <div className="orline">or</div>
+
+          <div
+            onDragOver={(event) => {
+              event.preventDefault();
+              if (!loading) setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+          >
+            <Dropzone
+              armed={dragOver}
+              disabled={loading}
+              onClick={() => fileInputRef.current?.click()}
+              icon={<UploadSimple aria-hidden />}
+              title={dragOver ? "Release to add" : "Drop a PDF here"}
+              hint={dragOver ? "PDF only" : "or choose a file"}
+            />
+          </div>
           <input
+            ref={fileInputRef}
             type="file"
             accept=".pdf"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handleFileUpload(file);
-            }}
+            hidden
             disabled={loading}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) handleFileUpload(file);
+              event.target.value = "";
+            }}
           />
-        </label>
-      </div>
+        </Section>
 
-      {loading && (
-        <div className="mt-8 text-center">
-          <div className="inline-block w-6 h-6 border-2 border-[var(--primary)] border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-[var(--muted)] mt-3">
-            {loadingMessage}
-          </p>
-        </div>
-      )}
-    </div>
+        {error ? (
+          <Section>
+            <Notice tone="bad">{error}</Notice>
+          </Section>
+        ) : null}
+
+        {loading ? (
+          <Section className="col-narrow">
+            <Working>{loadingMessage}</Working>
+            {droppedName && pendingAction === "pdf" ? (
+              <Provenance>{droppedName}</Provenance>
+            ) : null}
+            <Provenance>
+              This runs in one go, so stay on this page until it finishes.
+            </Provenance>
+          </Section>
+        ) : null}
+      </Body>
+    </>
   );
 }

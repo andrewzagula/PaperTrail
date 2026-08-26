@@ -1,8 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import {
+  Body,
+  Button,
+  Empty,
+  Input,
+  Notice,
+  Num,
+  PageHeader,
+  Panel,
+  PanelHead,
+  Row,
+  Section,
+  Split,
+  StatusPill,
+  TopBar,
+  toneFor,
+} from "@/components";
 import { getApiErrorMessage } from "@/lib/api-errors";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -22,6 +40,22 @@ interface DiscoveryRunItem {
   status: string;
   created_at: string;
   num_results: number;
+}
+
+function relativeDate(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+  const minutes = Math.round((Date.now() - parsed.getTime()) / 60000);
+  if (minutes < 2) return "just now";
+  if (minutes < 60) return `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.round(hours / 24);
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days} days ago`;
+  return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 export default function Home() {
@@ -72,148 +106,127 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center px-6 py-16">
-      <main className="max-w-2xl w-full text-center space-y-8">
-        <h1 className="text-5xl font-bold tracking-tight">
-          Paper<span className="text-[var(--primary)]">trail</span>
-        </h1>
-        <p className="text-xl text-[var(--muted)] leading-relaxed">
-          Start with a research question. Discover, understand, compare, and
-          generate ideas.
-        </p>
-        <div className="pt-2">
-          <div className="flex gap-3">
-            <input
-              type="text"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !submitting) {
-                  handleDiscover();
-                }
-              }}
-              placeholder="What is your research question?"
-              className="flex-1 px-4 py-3 rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] placeholder:text-[var(--muted)] focus:outline-none focus:border-[var(--primary)] transition-colors"
-              disabled={submitting}
-            />
-            <button
-              onClick={handleDiscover}
-              disabled={submitting || !question.trim()}
-              className="px-6 py-3 bg-[var(--primary)] hover:bg-[var(--primary-hover)] disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
-            >
-              {submitting ? "Searching..." : "Discover"}
-            </button>
-          </div>
-          {error && (
-            <p className="text-red-500 text-sm mt-2 text-left">{error}</p>
-          )}
-          <div className="mt-3 flex flex-wrap gap-3 text-sm">
-            <a
-              href="/dashboard"
-              className="rounded-lg border border-[var(--primary)]/20 bg-[var(--primary)]/5 px-4 py-2 text-[var(--primary)] transition-colors hover:bg-[var(--primary)]/10"
-            >
-              Workspace
-            </a>
-            <a
-              href="/papers/new"
-              className="rounded-lg border border-[var(--border)] px-4 py-2 text-[var(--foreground)] transition-colors hover:border-[var(--primary)]/30 hover:text-[var(--primary)]"
-            >
-              Upload Paper
-            </a>
-            <a
-              href="/compare"
-              className="rounded-lg border border-[var(--primary)]/20 bg-[var(--primary)]/5 px-4 py-2 text-[var(--primary)] transition-colors hover:bg-[var(--primary)]/10"
-            >
-              Compare Library
-            </a>
-            <a
-              href="/ideas"
-              className="rounded-lg border border-[var(--primary)]/20 bg-[var(--primary)]/5 px-4 py-2 text-[var(--primary)] transition-colors hover:bg-[var(--primary)]/10"
-            >
-              Generate Ideas
-            </a>
-          </div>
+    <>
+      <TopBar
+        crumb={<b>Discover</b>}
+        end={
+          loaded ? (
+            <Num>
+              {runs.length} run{runs.length === 1 ? "" : "s"} &middot;{" "}
+              {papers.length} paper{papers.length === 1 ? "" : "s"}
+            </Num>
+          ) : undefined
+        }
+      />
+      <Body>
+        <PageHeader
+          title="Start with a research question"
+          sub="Discover, understand, compare, and turn papers into ideas. Everything stays on this machine."
+        />
+
+        <div className="askrow">
+          <Input
+            value={question}
+            onChange={(event) => setQuestion(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !submitting) {
+                handleDiscover();
+              }
+            }}
+            placeholder="What is your research question?"
+            disabled={submitting}
+            aria-label="Research question"
+          />
+          <Button onClick={handleDiscover} disabled={submitting || !question.trim()}>
+            {submitting ? "Starting" : "Discover"}
+          </Button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
-          {[
-            {
-              title: "Discover",
-              desc: "Find relevant papers from a research question",
-            },
-            {
-              title: "Understand",
-              desc: "Structured breakdowns of any research paper",
-            },
-            {
-              title: "Compare",
-              desc: "Side-by-side analysis of multiple papers",
-            },
-            {
-              title: "Ideas",
-              desc: "Generate grounded research directions from papers or topics",
-            },
-          ].map((item) => (
-            <div
-              key={item.title}
-              className="p-5 rounded-xl border border-[var(--border)] bg-[var(--card)] text-left"
-            >
-              <h3 className="font-semibold text-lg mb-1">{item.title}</h3>
-              <p className="text-sm text-[var(--muted)]">{item.desc}</p>
-            </div>
-          ))}
-        </div>
-        {loaded && runs.length > 0 && (
-          <div className="pt-6 text-left">
-            <h2 className="text-lg font-semibold mb-4">Recent Discoveries</h2>
-            <div className="space-y-3">
-              {runs.map((run) => (
-                <button
-                  key={run.id}
-                  onClick={() => router.push(`/discover/${run.id}`)}
-                  className="w-full text-left p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] hover:border-[var(--primary)]/30 transition-colors"
-                >
-                  <h3 className="font-medium mb-1 line-clamp-1">
+        {error ? (
+          <div style={{ marginTop: "var(--space-lg)" }}>
+            <Notice tone="bad">{error}</Notice>
+          </div>
+        ) : null}
+
+        <Section>
+          <Split>
+            <Panel>
+              <PanelHead
+                end={
+                  <Link href="/library" className="lnk">
+                    All runs
+                  </Link>
+                }
+              >
+                Recent discoveries
+              </PanelHead>
+              {!loaded ? (
+                <Row>Loading</Row>
+              ) : runs.length === 0 ? (
+                <div className="row">
+                  <span className="sub">
+                    Nothing yet. Ask a question above to start one.
+                  </span>
+                </div>
+              ) : (
+                runs.slice(0, 6).map((run) => (
+                  <Row
+                    key={run.id}
+                    href={`/discover/${run.id}`}
+                    end={
+                      <>
+                        {run.status === "complete" ? (
+                          <Num>{run.num_results} results</Num>
+                        ) : null}
+                        <StatusPill tone={toneFor(run.status)}>
+                          {run.status}
+                        </StatusPill>
+                      </>
+                    }
+                  >
                     {run.question}
-                  </h3>
-                  <p className="text-sm text-[var(--muted)]">
-                    {run.status === "complete"
-                      ? `${run.num_results} papers found`
-                      : run.status === "running"
-                        ? "Searching..."
-                        : run.status === "failed"
-                          ? "Failed"
-                          : "Pending..."}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {loaded && papers.length > 0 && (
-          <div className="pt-6 text-left">
-            <h2 className="text-lg font-semibold mb-4">Your Papers</h2>
-            <div className="space-y-3">
-              {papers.map((paper) => (
-                <button
-                  key={paper.id}
-                  onClick={() => router.push(`/papers/${paper.id}`)}
-                  className="w-full text-left p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] hover:border-[var(--primary)]/30 transition-colors"
-                >
-                  <h3 className="font-medium mb-1 line-clamp-1">
+                    <span className="sub">{relativeDate(run.created_at)}</span>
+                  </Row>
+                ))
+              )}
+            </Panel>
+
+            <Panel>
+              <PanelHead
+                end={
+                  <Link href="/papers/new" className="lnk">
+                    Add paper
+                  </Link>
+                }
+              >
+                Library
+              </PanelHead>
+              {!loaded ? (
+                <Row>Loading</Row>
+              ) : papers.length === 0 ? (
+                <div className="row">
+                  <span className="sub">
+                    No papers yet. Add one, or take one from a discovery run.
+                  </span>
+                </div>
+              ) : (
+                papers.slice(0, 6).map((paper) => (
+                  <Row
+                    key={paper.id}
+                    href={`/papers/${paper.id}`}
+                    end={<Num>{relativeDate(paper.created_at)}</Num>}
+                  >
                     {paper.title}
-                  </h3>
-                  {paper.authors && (
-                    <p className="text-sm text-[var(--muted)] line-clamp-1">
-                      {paper.authors}
-                    </p>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </main>
-    </div>
+                    {paper.authors ? (
+                      <span className="sub">{paper.authors}</span>
+                    ) : null}
+                  </Row>
+                ))
+              )}
+            </Panel>
+          </Split>
+        </Section>
+      </Body>
+    </>
   );
 }

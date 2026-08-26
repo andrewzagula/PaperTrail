@@ -1,8 +1,33 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
+
 import { useSearchParams } from "next/navigation";
 
+import {
+  Body,
+  Button,
+  Checkbox,
+  Empty,
+  Input,
+  Item,
+  Notice,
+  Num,
+  PageHeader,
+  PageSkeleton,
+  Panel,
+  PanelBody,
+  PlainList,
+  Provenance,
+  Section,
+  SectionHead,
+  SelectionBar,
+  Tag,
+  TopBar,
+  WarnPanel,
+  Working,
+} from "@/components";
 import {
   MAX_COMPARE_SELECTION,
   getStoredCompareSelection,
@@ -79,7 +104,7 @@ function formatDate(value: string): string {
   const parsed = new Date(value);
 
   if (Number.isNaN(parsed.getTime())) {
-    return "Unknown date";
+    return "an unknown date";
   }
 
   return parsed.toLocaleDateString(undefined, {
@@ -228,7 +253,7 @@ function ComparePageContent() {
       }
 
       if (current.length >= MAX_COMPARE_SELECTION) {
-        nextMessage = `You can compare up to ${MAX_COMPARE_SELECTION} papers at a time.`;
+        nextMessage = `Compare handles ${MAX_COMPARE_SELECTION} papers at a time. Deselect one to add another.`;
         return current;
       }
 
@@ -247,7 +272,7 @@ function ComparePageContent() {
     setSelectionMessage("");
 
     if (selectedIds.length < 2) {
-      setCompareError("Select at least 2 papers to compare.");
+      setCompareError("Comparing needs at least two papers. Select one more.");
       return;
     }
 
@@ -281,14 +306,14 @@ function ComparePageContent() {
 
     const normalizedTitle = saveTitle.trim();
     if (!normalizedTitle) {
-      setSaveError("Comparison title is required.");
+      setSaveError("Give this comparison a title before saving.");
       setSaveSuccess("");
       return;
     }
 
     const saveKey = `${compareResultSignature}::${normalizedTitle}`;
     if (saveKey === lastSavedKey) {
-      setSaveError("This comparison is already saved with that title.");
+      setSaveError("This comparison is already saved under that title.");
       setSaveSuccess("");
       return;
     }
@@ -316,7 +341,7 @@ function ComparePageContent() {
 
       const data: SaveComparisonResponse = await res.json();
       setSaveTitle(data.title);
-      setSaveSuccess(`Saved comparison as "${data.title}".`);
+      setSaveSuccess(`Saved to your library as "${data.title}".`);
       setLastSavedKey(saveKey);
     } catch (err) {
       setSaveError(
@@ -328,437 +353,277 @@ function ComparePageContent() {
   };
 
   return (
-    <div className="min-h-screen px-6 py-10">
-      <main className="mx-auto max-w-7xl space-y-8">
-        <div className="flex flex-col gap-4 border-b border-[var(--border)] pb-8 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-3">
-            <a
-              href="/"
-              className="text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
+    <>
+      <TopBar
+        crumb={
+          <>
+            <b>Compare</b> <span aria-hidden>/</span>{" "}
+            {selectedIds.length} paper{selectedIds.length === 1 ? "" : "s"} selected
+          </>
+        }
+        end={
+          compareResult ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSaveComparison}
+              disabled={saveLoading}
             >
-              &larr; Home
-            </a>
-            <div>
-              <h1 className="text-4xl font-bold tracking-tight">Compare Papers</h1>
-              <p className="mt-2 max-w-3xl text-[var(--muted)] leading-relaxed">
-                Choose 2 to 5 papers from your library, then run a bounded
-                compare pass for a narrative summary, side-by-side matrix, and
-                missing-data warnings.
-              </p>
-            </div>
-          </div>
+              {saveLoading ? "Saving" : "Save comparison"}
+            </Button>
+          ) : undefined
+        }
+      />
+      <Body>
+        <PageHeader
+          title="Compare"
+          sub="Put two to five papers side by side on the same set of dimensions. Nothing runs until you ask it to."
+        />
 
-          <div className="rounded-full border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-sm text-[var(--muted)]">
-            {selectedIds.length} / {MAX_COMPARE_SELECTION} selected
-          </div>
-        </div>
+        <Section>
+          <SectionHead
+            end={
+              <Link href="/papers/new" className="lnk">
+                Add paper
+              </Link>
+            }
+          >
+            Papers
+          </SectionHead>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
-          <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-            <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-              <div className="flex items-center justify-between gap-4">
-                <h2 className="text-lg font-semibold">Selection</h2>
-                <span className="text-xs uppercase tracking-wide text-[var(--muted)]">
-                  manual run only
-                </span>
-              </div>
-
-              <p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">
-                The compare workflow never auto-runs on page load. Adjust the
-                selection first, then trigger it when you are ready.
-              </p>
-
-              {selectedPapers.length === 0 ? (
-                <div className="mt-4 rounded-xl border border-dashed border-[var(--border)] px-4 py-6 text-sm text-[var(--muted)]">
-                  No papers selected yet. Pick papers from the library to build
-                  a compare set.
-                </div>
-              ) : (
-                <div className="mt-4 space-y-3">
-                  {selectedPapers.map((paper) => (
-                    <div
-                      key={paper.id}
-                      className="rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <h3 className="font-medium line-clamp-2">{paper.title}</h3>
-                          {paper.authors && (
-                            <p className="mt-1 text-sm text-[var(--muted)] line-clamp-2">
-                              {paper.authors}
-                            </p>
-                          )}
-                        </div>
-
-                        <button
-                          onClick={() => handleTogglePaper(paper.id)}
-                          disabled={compareLoading}
-                          className="shrink-0 text-xs text-[var(--muted)] hover:text-red-500 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          Remove
-                        </button>
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                            paper.has_structured_breakdown
-                              ? "bg-[var(--primary)]/10 text-[var(--primary)]"
-                              : "border border-[var(--border)] text-[var(--muted)]"
-                          }`}
-                        >
-                          {paper.has_structured_breakdown
-                            ? "Structured data ready"
-                            : "Needs extra processing"}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {selectedPapersNeedingProcessing.length > 0 && (
-                <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm leading-relaxed">
-                  <p className="font-medium">Extra processing expected</p>
-                  <p className="mt-1 text-[var(--muted)]">
-                    {selectedPapersNeedingProcessing
-                      .map((paper) => paper.title)
-                      .join(", ")}{" "}
-                    {selectedPapersNeedingProcessing.length === 1 ? "does" : "do"} not
-                    have a stored structured breakdown yet. The backend will
-                    generate missing breakdowns during compare.
-                  </p>
-                </div>
-              )}
-
-              {selectionMessage && (
-                <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm">
-                  {selectionMessage}
-                </div>
-              )}
-
-              {compareError && (
-                <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500">
-                  {compareError}
-                </div>
-              )}
-
-              <button
-                onClick={handleCompare}
-                disabled={compareLoading || selectedIds.length < 2}
-                className="mt-5 w-full rounded-xl bg-[var(--primary)] px-4 py-3 font-medium text-white transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+          {selectedIds.length > 0 ? (
+            <SelectionBar count={selectedIds.length}>
+              <Num>{MAX_COMPARE_SELECTION - selectedIds.length} more allowed</Num>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSelectedIds([]);
+                  setSelectionMessage("");
+                }}
+                disabled={compareLoading}
               >
-                {compareLoading
-                  ? "Comparing..."
-                  : `Compare ${Math.max(selectedIds.length, 2)} Papers`}
-              </button>
-            </section>
-          </aside>
+                Clear
+              </Button>
+            </SelectionBar>
+          ) : null}
 
-          <section className="space-y-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold">Paper Library</h2>
-                <p className="mt-1 text-sm text-[var(--muted)]">
-                  Toggle papers into the compare set. The selection persists
-                  across pages so you can queue papers from the library or from
-                  an individual paper view.
-                </p>
-              </div>
-
-              <a
-                href="/papers/new"
-                className="text-sm text-[var(--primary)] hover:underline"
-              >
-                Add another paper
-              </a>
+          {selectionMessage ? (
+            <div style={{ marginTop: "var(--space-lg)" }}>
+              <Notice tone="quiet">{selectionMessage}</Notice>
             </div>
+          ) : null}
 
-            {libraryLoading ? (
-              <div className="flex min-h-64 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--card)]">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
-              </div>
-            ) : libraryError ? (
-              <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500">
-                {libraryError}
-              </div>
-            ) : papers.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)] px-6 py-12 text-center">
-                <h3 className="text-lg font-semibold">Your library is empty</h3>
-                <p className="mt-2 text-sm text-[var(--muted)]">
-                  Upload or ingest papers first, then come back here to compare
-                  them.
-                </p>
-                <a
-                  href="/papers/new"
-                  className="mt-4 inline-flex rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground)] transition-colors hover:border-[var(--primary)]/30 hover:text-[var(--primary)]"
+          {libraryLoading ? (
+            <PageSkeleton rows={4} />
+          ) : libraryError ? (
+            <WarnPanel title="Your library did not load">{libraryError}</WarnPanel>
+          ) : papers.length === 0 ? (
+            <Empty>
+              Nothing to compare yet.{" "}
+              <Link href="/papers/new" className="lnk">
+                Add a paper
+              </Link>{" "}
+              and come back.
+            </Empty>
+          ) : (
+            papers.map((paper) => {
+              const isSelected = selectedIds.includes(paper.id);
+              const locked = !isSelected && selectedIds.length >= MAX_COMPARE_SELECTION;
+
+              return (
+                <Item
+                  key={paper.id}
+                  checkbox={
+                    <Checkbox
+                      checked={isSelected}
+                      onChange={() => handleTogglePaper(paper.id)}
+                      disabled={locked || compareLoading}
+                      label={`Compare ${paper.title}`}
+                    />
+                  }
                 >
-                  Upload a paper
-                </a>
-              </div>
-            ) : (
-              <div className="grid gap-4 lg:grid-cols-2">
-                {papers.map((paper) => {
-                  const isSelected = selectedIds.includes(paper.id);
-                  const selectionLocked =
-                    !isSelected && selectedIds.length >= MAX_COMPARE_SELECTION;
-
-                  return (
-                    <button
-                      key={paper.id}
-                      onClick={() => handleTogglePaper(paper.id)}
-                      disabled={selectionLocked || compareLoading}
-                      aria-pressed={isSelected}
-                      className={`rounded-2xl border p-5 text-left transition-all ${
-                        isSelected
-                          ? "border-[var(--primary)] bg-[var(--primary)]/5"
-                          : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--primary)]/30"
-                      } ${
-                        selectionLocked || compareLoading
-                          ? "cursor-not-allowed opacity-60"
-                          : ""
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <h3 className="text-lg font-semibold line-clamp-2">
-                            {paper.title}
-                          </h3>
-                          {paper.authors && (
-                            <p className="mt-1 text-sm text-[var(--muted)] line-clamp-2">
-                              {paper.authors}
-                            </p>
-                          )}
-                        </div>
-
-                        <span
-                          className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
-                            isSelected
-                              ? "bg-[var(--primary)] text-white"
-                              : "border border-[var(--border)] text-[var(--muted)]"
-                          }`}
-                        >
-                          {isSelected
-                            ? "Selected"
-                            : compareLoading
-                              ? "Locked"
-                              : selectionLocked
-                              ? "Limit reached"
-                              : "Select"}
-                        </span>
-                      </div>
-
-                      {paper.abstract && (
-                        <p className="mt-3 text-sm leading-relaxed text-[var(--muted)] line-clamp-4">
-                          {paper.abstract}
-                        </p>
-                      )}
-
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                            paper.has_structured_breakdown
-                              ? "bg-[var(--primary)]/10 text-[var(--primary)]"
-                              : "border border-[var(--border)] text-[var(--muted)]"
-                          }`}
-                        >
-                          {paper.has_structured_breakdown
-                            ? "Structured data ready"
-                            : "Needs extra processing"}
-                        </span>
-                        <span className="rounded-full border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--muted)]">
-                          Added {formatDate(paper.created_at)}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        </div>
-
-        {compareLoading && (
-          <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] px-6 py-8">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-              <div className="h-6 w-6 shrink-0 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
-              <div>
-                <h2 className="text-lg font-semibold">Comparing selected papers</h2>
-                <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
-                  Normalizing paper evidence, generating missing breakdowns if
-                  needed, and building the comparison matrix.
-                </p>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {compareResult && (
-          <section className="space-y-6 border-t border-[var(--border)] pt-8">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold">Compare Results</h2>
-                <p className="mt-1 text-sm text-[var(--muted)]">
-                  Stable rendered output for the current selection. Changing the
-                  selection clears the result until you run compare again.
-                </p>
-              </div>
-              <div className="flex flex-col gap-3 xl:items-end">
-                <span className="text-sm text-[var(--muted)]">
-                  {compareResult.selected_papers.length} papers compared
-                </span>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <input
-                    type="text"
-                    value={saveTitle}
-                    maxLength={1000}
-                    disabled={saveLoading}
-                    onChange={(event) => {
-                      setSaveTitle(event.target.value);
-                      setSaveError("");
-                      setSaveSuccess("");
-                    }}
-                    placeholder="Comparison title"
-                    className="w-full min-w-0 rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-2.5 text-sm outline-none transition-colors focus:border-[var(--primary)] sm:min-w-96"
-                  />
-                  <button
-                    onClick={handleSaveComparison}
-                    disabled={saveLoading}
-                    className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-2.5 text-sm font-medium transition-colors hover:border-[var(--primary)]/30 hover:text-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {saveLoading ? "Saving..." : "Save Comparison"}
-                  </button>
-                </div>
-                {saveError && (
-                  <p className="text-sm text-red-500">{saveError}</p>
-                )}
-                {saveSuccess && (
-                  <p className="text-sm text-[var(--primary)]">{saveSuccess}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-              {compareResult.selected_papers.map((paper) => {
-                const profile = profileById[paper.id];
-
-                return (
-                  <div
-                    key={paper.id}
-                    className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <h3 className="text-lg font-semibold line-clamp-2">
-                          {paper.title}
-                        </h3>
-                        {(paper.authors || profile?.authors) && (
-                          <p className="mt-1 text-sm text-[var(--muted)] line-clamp-2">
-                            {paper.authors || profile?.authors}
-                          </p>
-                        )}
-                      </div>
-
-                      <a
-                        href={`/papers/${paper.id}`}
-                        className="shrink-0 text-sm text-[var(--primary)] hover:underline"
-                      >
-                        Open
-                      </a>
-                    </div>
-
-                    {profile?.warnings.length ? (
-                      <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
-                        {profile.warnings.map((warning) => (
-                          <li key={warning} className="rounded-lg bg-[var(--background)] px-3 py-2">
-                            {warning}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-4 text-sm text-[var(--muted)]">
-                        No field-level warnings surfaced for this paper.
-                      </p>
-                    )}
+                  <h3>
+                    <Link href={`/papers/${paper.id}`} className="lnk">
+                      {paper.title}
+                    </Link>
+                  </h3>
+                  {paper.authors ? <p className="auth">{paper.authors}</p> : null}
+                  {paper.abstract ? <p className="abs">{paper.abstract}</p> : null}
+                  <div className="metaline">
+                    <Num>Added {formatDate(paper.created_at)}</Num>
+                    <Tag tone={paper.has_structured_breakdown ? "default" : "quiet"}>
+                      {paper.has_structured_breakdown
+                        ? "breakdown ready"
+                        : "no breakdown yet"}
+                    </Tag>
                   </div>
-                );
-              })}
+                </Item>
+              );
+            })
+          )}
+        </Section>
+
+        {selectedPapersNeedingProcessing.length > 0 ? (
+          <Section>
+            <WarnPanel title="This run will take longer">
+              {selectedPapersNeedingProcessing.map((paper) => paper.title).join(", ")}{" "}
+              {selectedPapersNeedingProcessing.length === 1 ? "has" : "have"} no
+              stored breakdown yet, so comparing will build{" "}
+              {selectedPapersNeedingProcessing.length === 1 ? "it" : "them"} first.
+            </WarnPanel>
+          </Section>
+        ) : null}
+
+        <Section>
+          {compareError ? (
+            <div style={{ marginBottom: "var(--space-lg)" }}>
+              <Notice tone="bad">{compareError}</Notice>
             </div>
+          ) : null}
+          <Button onClick={handleCompare} disabled={compareLoading || selectedIds.length < 2}>
+            {compareLoading
+              ? "Comparing"
+              : `Compare ${Math.max(selectedIds.length, 2)} papers`}
+          </Button>
+        </Section>
 
-            {compareResult.warnings.length > 0 && (
-              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
-                <h3 className="text-lg font-semibold">Warnings</h3>
-                <ul className="mt-4 space-y-3 text-sm text-[var(--muted)]">
-                  {compareResult.warnings.map((warning) => (
-                    <li
-                      key={warning}
-                      className="rounded-xl bg-[var(--background)] px-4 py-3 leading-relaxed"
-                    >
-                      {warning}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+        {compareLoading ? (
+          <Section>
+            <Working>
+              Normalizing each paper onto the same dimensions, then building the
+              matrix. This takes a minute.
+            </Working>
+          </Section>
+        ) : null}
 
-            <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
-              <h3 className="text-lg font-semibold">Narrative Summary</h3>
-              <div className="mt-4 whitespace-pre-wrap text-sm leading-7">
-                {compareResult.narrative_summary}
-              </div>
-            </div>
+        {compareResult ? (
+          <>
+            {compareResult.warnings.length > 0 ? (
+              <Section>
+                <WarnPanel
+                  title={
+                    compareResult.warnings.length === 1
+                      ? "One warning"
+                      : `${compareResult.warnings.length} warnings`
+                  }
+                >
+                  {compareResult.warnings.join(" ")}
+                </WarnPanel>
+              </Section>
+            ) : null}
 
-            <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
-              <div className="border-b border-[var(--border)] px-6 py-5">
-                <h3 className="text-lg font-semibold">Comparison Table</h3>
-                <p className="mt-1 text-sm text-[var(--muted)]">
-                  Built for laptop-width horizontal scanning across the selected
-                  papers.
-                </p>
-              </div>
+            <Section>
+              <SectionHead
+                end={<Num>{compareResult.selected_papers.length} papers</Num>}
+              >
+                Narrative summary
+              </SectionHead>
+              <Panel>
+                <PanelBody>
+                  <p>{compareResult.narrative_summary}</p>
+                </PanelBody>
+              </Panel>
+              <Provenance>
+                Written by the model from every breakdown below. Check it against
+                the rows.
+              </Provenance>
+            </Section>
 
-              <div className="overflow-x-auto">
-                <table className="min-w-[960px] w-full border-collapse text-sm">
-                  <thead>
-                    <tr className="border-b border-[var(--border)]">
-                      {compareResult.comparison_table.columns.map((column, index) => (
-                        <th
-                          key={column.key}
-                          className={`px-5 py-4 text-left align-top font-semibold ${
-                            index === 0
-                              ? "sticky left-0 z-10 min-w-52 bg-[var(--card)]"
-                              : "min-w-64"
-                          }`}
-                        >
-                          {column.label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {compareResult.comparison_table.rows.map((row) => (
-                      <tr key={row.key} className="border-b border-[var(--border)] last:border-b-0">
-                        <th className="sticky left-0 z-10 min-w-52 bg-[var(--card)] px-5 py-4 text-left align-top font-medium">
-                          {row.label}
-                        </th>
-                        {row.values.map((value, index) => (
-                          <td
-                            key={`${row.key}-${compareResult.comparison_table.columns[index + 1]?.key}`}
-                            className="min-w-64 px-5 py-4 align-top leading-6 text-[var(--foreground)]/90"
-                          >
-                            {value}
-                          </td>
+            <Section>
+              <SectionHead>Comparison table</SectionHead>
+              {compareResult.comparison_table.rows.length === 0 ? (
+                <Empty>The comparison returned no rows.</Empty>
+              ) : (
+                <div className="cmp-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        {compareResult.comparison_table.columns.map((column) => (
+                          <th key={column.key} scope="col">
+                            {column.label}
+                          </th>
                         ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {compareResult.comparison_table.rows.map((row) => (
+                        <tr key={row.key}>
+                          <td>{row.label}</td>
+                          {row.values.map((value, index) => (
+                            <td key={`${row.key}-${index}`}>{value}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Section>
+
+            <Section>
+              <SectionHead>What was missing, per paper</SectionHead>
+              {compareResult.selected_papers.map((paper) => {
+                const profile = profileById[paper.id];
+                return (
+                  <Item key={paper.id}>
+                    <h3>
+                      <Link href={`/papers/${paper.id}`} className="lnk">
+                        {paper.title}
+                      </Link>
+                    </h3>
+                    {profile?.warnings.length ? (
+                      <PlainList items={profile.warnings} />
+                    ) : (
+                      <p className="auth">Nothing was missing for this paper.</p>
+                    )}
+                  </Item>
+                );
+              })}
+            </Section>
+
+            <Section>
+              <SectionHead>Save this comparison</SectionHead>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "var(--space-md)",
+                  alignItems: "flex-start",
+                  flexWrap: "wrap",
+                }}
+              >
+                <Input
+                  value={saveTitle}
+                  maxLength={1000}
+                  disabled={saveLoading}
+                  onChange={(event) => {
+                    setSaveTitle(event.target.value);
+                    setSaveError("");
+                    setSaveSuccess("");
+                  }}
+                  placeholder="Title for this comparison"
+                  invalid={Boolean(saveError)}
+                  style={{ flex: "1 1 320px" }}
+                />
+                <Button onClick={handleSaveComparison} disabled={saveLoading}>
+                  {saveLoading ? "Saving" : "Save"}
+                </Button>
               </div>
-            </div>
-          </section>
-        )}
-      </main>
-    </div>
+              {saveError ? (
+                <div style={{ marginTop: "var(--space-md)" }}>
+                  <Notice tone="bad">{saveError}</Notice>
+                </div>
+              ) : null}
+              {saveSuccess ? (
+                <div style={{ marginTop: "var(--space-md)" }}>
+                  <Notice>{saveSuccess}</Notice>
+                </div>
+              ) : null}
+            </Section>
+          </>
+        ) : null}
+      </Body>
+    </>
   );
 }
 
@@ -766,9 +631,12 @@ export default function ComparePage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
-        </div>
+        <>
+          <TopBar crumb={<b>Compare</b>} />
+          <Body>
+            <PageSkeleton />
+          </Body>
+        </>
       }
     >
       <ComparePageContent />

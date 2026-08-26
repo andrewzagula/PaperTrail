@@ -1,8 +1,36 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
+import {
+  Body,
+  Button,
+  Checkbox,
+  Chip,
+  ChipRow,
+  Empty,
+  Fact,
+  Facts,
+  Field,
+  Input,
+  Item,
+  Notice,
+  Num,
+  PageHeader,
+  PageSkeleton,
+  PlainList,
+  Provenance,
+  Section,
+  SectionHead,
+  SelectionBar,
+  Tag,
+  TopBar,
+  WarnPanel,
+  Working,
+} from "@/components";
+import type { TagTone } from "@/components";
 import { getApiErrorMessage } from "@/lib/api-errors";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -62,17 +90,19 @@ const TRANSFORMATION_LABELS: Record<TransformationType, string> = {
   apply: "Apply",
 };
 
-const FEASIBILITY_STYLES: Record<Feasibility, string> = {
-  low: "border-red-500/20 bg-red-500/10 text-red-500",
-  medium: "border-amber-500/20 bg-amber-500/10 text-amber-600",
-  high: "border-[var(--primary)]/20 bg-[var(--primary)]/10 text-[var(--primary)]",
+/* Feasibility runs the opposite way from severity: the low one is the
+   one worth flagging, so the alarm grade goes to "low". */
+const FEASIBILITY_TONES: Record<Feasibility, TagTone> = {
+  low: "high",
+  medium: "med",
+  high: "default",
 };
 
 function formatDate(value: string): string {
   const parsed = new Date(value);
 
   if (Number.isNaN(parsed.getTime())) {
-    return "Unknown date";
+    return "an unknown date";
   }
 
   return parsed.toLocaleDateString(undefined, {
@@ -130,6 +160,41 @@ function createDefaultIdeasTitle(result: IdeaGenerationResponse): string {
   return `Ideas: ${firstPaper.title} (+${remainingPapers.length} more)`;
 }
 
+function IdeaEntry({ idea, index }: { idea: IdeaResponse; index: number }) {
+  return (
+    <Item index={index + 1}>
+      <h3>{idea.title}</h3>
+      <div className="foot">
+        <Tag>{TRANSFORMATION_LABELS[idea.transformation_type]}</Tag>
+        <Tag tone={FEASIBILITY_TONES[idea.feasibility]}>
+          {idea.feasibility} feasibility
+        </Tag>
+      </div>
+      <div style={{ marginTop: "var(--space-xl)" }}>
+        <Facts>
+          <Fact k="What it is">{idea.description}</Fact>
+          <Fact k="Why it is interesting">{idea.why_interesting}</Fact>
+          <Fact k="Grounded in" none="Nothing was cited.">
+            {idea.evidence_basis.length > 0 ? (
+              <PlainList items={idea.evidence_basis} />
+            ) : null}
+          </Fact>
+          <Fact k="Risks and unknowns" none="None returned.">
+            {idea.risks_or_unknowns.length > 0 ? (
+              <PlainList items={idea.risks_or_unknowns} />
+            ) : null}
+          </Fact>
+          {idea.warnings.length > 0 ? (
+            <Fact k="Warnings">
+              <PlainList items={idea.warnings} />
+            </Fact>
+          ) : null}
+        </Facts>
+      </div>
+    </Item>
+  );
+}
+
 function IdeasPageContent() {
   const searchParams = useSearchParams();
 
@@ -155,7 +220,9 @@ function IdeasPageContent() {
     setSelectedIds(normalizedIds);
 
     if (queryPaperIds.length > MAX_IDEA_SELECTION) {
-      setSelectionMessage(`Using the first ${MAX_IDEA_SELECTION} papers from the link.`);
+      setSelectionMessage(
+        `That link named more than ${MAX_IDEA_SELECTION} papers. The first ${MAX_IDEA_SELECTION} are selected.`,
+      );
     }
   }, [searchParams]);
 
@@ -195,14 +262,6 @@ function IdeasPageContent() {
     setSelectedIds((current) => current.filter((paperId) => availableIds.has(paperId)));
   }, [libraryLoading, papers]);
 
-  const selectedPapers = useMemo(
-    () =>
-      selectedIds
-        .map((paperId) => papers.find((paper) => paper.id === paperId))
-        .filter((paper): paper is PaperListItem => Boolean(paper)),
-    [papers, selectedIds],
-  );
-
   const sourceSignature = createSourceSignature(selectedIds, topic);
   const hasSource = selectedIds.length > 0 || topic.trim().length > 0;
   const generationDisabled =
@@ -239,7 +298,9 @@ function IdeasPageContent() {
     }
 
     if (selectedIds.length >= MAX_IDEA_SELECTION) {
-      setSelectionMessage(`You can use up to ${MAX_IDEA_SELECTION} papers for ideas.`);
+      setSelectionMessage(
+        `Ideas draw on at most ${MAX_IDEA_SELECTION} papers. Deselect one to add another.`,
+      );
       return;
     }
 
@@ -259,7 +320,7 @@ function IdeasPageContent() {
     setSelectionMessage("");
 
     if (!selectedIds.length && !normalizedTopic) {
-      setGenerationError("Select at least one paper or enter a topic.");
+      setGenerationError("Select at least one paper, or type a topic to work from.");
       return;
     }
 
@@ -311,14 +372,14 @@ function IdeasPageContent() {
 
     const normalizedTitle = saveTitle.trim();
     if (!normalizedTitle) {
-      setSaveError("Idea title is required.");
+      setSaveError("Give this set a title before saving.");
       setSaveSuccess("");
       return;
     }
 
     const saveKey = createSaveKey(ideaResult, normalizedTitle);
     if (saveKey === lastSavedKey) {
-      setSaveError("This idea result is already saved with that title.");
+      setSaveError("This set is already saved under that title.");
       setSaveSuccess("");
       return;
     }
@@ -345,7 +406,7 @@ function IdeasPageContent() {
 
       const data: SaveIdeasResponse = await res.json();
       setSaveTitle(data.title);
-      setSaveSuccess(`Saved ideas as "${data.title}".`);
+      setSaveSuccess(`Saved to your library as "${data.title}".`);
       setLastSavedKey(saveKey);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Failed to save ideas.");
@@ -356,455 +417,271 @@ function IdeasPageContent() {
 
   const resultIsStale =
     Boolean(ideaResult) && resultSourceSignature !== sourceSignature;
+  const showResult = ideaResult && !resultIsStale;
+
+  const crumbTail = selectedIds.length
+    ? `from ${selectedIds.length} paper${selectedIds.length === 1 ? "" : "s"}`
+    : topic.trim()
+      ? "from a topic"
+      : "no sources yet";
 
   return (
-    <div className="min-h-screen px-6 py-10">
-      <main className="mx-auto max-w-7xl space-y-8">
-        <div className="flex flex-col gap-4 border-b border-[var(--border)] pb-8 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-3">
-            <a
-              href="/"
-              className="text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
-            >
-              &larr; Home
-            </a>
-            <div>
-              <h1 className="text-4xl font-bold tracking-tight">Generate Ideas</h1>
-              <p className="mt-2 max-w-3xl text-[var(--muted)] leading-relaxed">
-                Choose paper sources, add an optional focus, and generate bounded
-                research ideas with evidence and uncertainty surfaced.
-              </p>
+    <>
+      <TopBar
+        crumb={
+          <>
+            <b>Ideas</b> <span aria-hidden>/</span> {crumbTail}
+          </>
+        }
+        end={
+          showResult ? (
+            <Button variant="ghost" size="sm" onClick={handleSaveIdeas} disabled={saveLoading}>
+              {saveLoading ? "Saving" : "Save ideas"}
+            </Button>
+          ) : undefined
+        }
+      />
+      <Body className="col-mid">
+        <PageHeader
+          title="Ideas"
+          sub="Research directions built from papers you already have. Every idea names what it draws on."
+        />
+
+        <Section>
+          <SectionHead>Sources</SectionHead>
+          <Field label="Topic or focus, if you have one">
+            <textarea
+              className="input"
+              value={topic}
+              onChange={(event) => handleTopicChange(event.target.value)}
+              placeholder="A research question, a domain, an evaluation angle"
+              disabled={generationLoading}
+              rows={3}
+              style={{ resize: "vertical", lineHeight: "var(--leading-body)" }}
+            />
+          </Field>
+
+          {selectionMessage ? (
+            <div style={{ marginTop: "var(--space-lg)" }}>
+              <Notice tone="quiet">{selectionMessage}</Notice>
             </div>
-          </div>
+          ) : null}
+        </Section>
 
-          <div className="rounded-full border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-sm text-[var(--muted)]">
-            {selectedIds.length} / {MAX_IDEA_SELECTION} papers selected
-          </div>
-        </div>
+        <Section>
+          <SectionHead
+            end={
+              <Link href="/papers/new" className="lnk">
+                Add a paper
+              </Link>
+            }
+          >
+            Papers
+          </SectionHead>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
-          <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-            <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-              <div className="flex items-center justify-between gap-4">
-                <h2 className="text-lg font-semibold">Sources</h2>
-                <span className="text-xs uppercase tracking-wide text-[var(--muted)]">
-                  manual run
-                </span>
-              </div>
-
-              <label
-                htmlFor="idea-topic"
-                className="mt-5 block text-sm font-medium text-[var(--foreground)]"
-              >
-                Topic or focus
-              </label>
-              <textarea
-                id="idea-topic"
-                value={topic}
-                onChange={(event) => handleTopicChange(event.target.value)}
-                placeholder="Optional focus, research question, domain, or evaluation angle"
+          {selectedIds.length > 0 ? (
+            <SelectionBar count={selectedIds.length}>
+              <Num>
+                {MAX_IDEA_SELECTION - selectedIds.length} more allowed
+              </Num>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSelectedIds([]);
+                  setSelectionMessage("");
+                  clearGeneratedOutput();
+                }}
                 disabled={generationLoading}
-                rows={4}
-                className="mt-2 w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm leading-6 outline-none transition-colors placeholder:text-[var(--muted)] focus:border-[var(--primary)] disabled:opacity-60"
-              />
-
-              <div className="mt-5">
-                <div className="flex items-center justify-between gap-4">
-                  <h3 className="text-sm font-semibold">Selected Papers</h3>
-                  {selectedPapers.length > 0 && (
-                    <button
-                      onClick={() => {
-                        setSelectedIds([]);
-                        setSelectionMessage("");
-                        clearGeneratedOutput();
-                      }}
-                      disabled={generationLoading}
-                      className="text-xs text-[var(--muted)] transition-colors hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-
-                {selectedPapers.length === 0 ? (
-                  <div className="mt-3 rounded-xl border border-dashed border-[var(--border)] px-4 py-6 text-sm text-[var(--muted)]">
-                    No papers selected.
-                  </div>
-                ) : (
-                  <div className="mt-3 space-y-3">
-                    {selectedPapers.map((paper) => (
-                      <div
-                        key={paper.id}
-                        className="rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <h4 className="font-medium line-clamp-2">{paper.title}</h4>
-                            {paper.authors && (
-                              <p className="mt-1 text-sm text-[var(--muted)] line-clamp-2">
-                                {paper.authors}
-                              </p>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => handleTogglePaper(paper.id)}
-                            disabled={generationLoading}
-                            className="shrink-0 text-xs text-[var(--muted)] transition-colors hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {selectionMessage && (
-                <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm">
-                  {selectionMessage}
-                </div>
-              )}
-
-              {generationError && (
-                <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500">
-                  {generationError}
-                </div>
-              )}
-
-              <button
-                onClick={handleGenerateIdeas}
-                disabled={generationDisabled}
-                className="mt-5 w-full rounded-xl bg-[var(--primary)] px-4 py-3 font-medium text-white transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {generationLoading ? "Generating..." : "Generate Ideas"}
-              </button>
-            </section>
-          </aside>
+                Clear
+              </Button>
+            </SelectionBar>
+          ) : null}
 
-          <section className="space-y-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold">Paper Library</h2>
-                <p className="mt-1 text-sm text-[var(--muted)]">
-                  Select up to five library papers as evidence sources.
-                </p>
-              </div>
+          {libraryLoading ? (
+            <PageSkeleton rows={4} />
+          ) : libraryError ? (
+            <WarnPanel title="Your library did not load">{libraryError}</WarnPanel>
+          ) : papers.length === 0 ? (
+            <Empty>
+              No papers yet. You can still generate ideas from a topic alone, or{" "}
+              <Link href="/papers/new" className="lnk">
+                add a paper
+              </Link>
+              .
+            </Empty>
+          ) : (
+            papers.map((paper) => {
+              const isSelected = selectedIds.includes(paper.id);
+              const locked = !isSelected && selectedIds.length >= MAX_IDEA_SELECTION;
 
-              <a
-                href="/papers/new"
-                className="text-sm text-[var(--primary)] hover:underline"
-              >
-                Add another paper
-              </a>
-            </div>
-
-            {libraryLoading ? (
-              <div className="flex min-h-64 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--card)]">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
-              </div>
-            ) : libraryError ? (
-              <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-500">
-                {libraryError}
-              </div>
-            ) : papers.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)] px-6 py-12 text-center">
-                <h3 className="text-lg font-semibold">Your library is empty</h3>
-                <p className="mt-2 text-sm text-[var(--muted)]">
-                  Topic-only idea generation is still available.
-                </p>
-                <a
-                  href="/papers/new"
-                  className="mt-4 inline-flex rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground)] transition-colors hover:border-[var(--primary)]/30 hover:text-[var(--primary)]"
+              return (
+                <Item
+                  key={paper.id}
+                  checkbox={
+                    <Checkbox
+                      checked={isSelected}
+                      onChange={() => handleTogglePaper(paper.id)}
+                      disabled={locked || generationLoading}
+                      label={`Use ${paper.title} as a source`}
+                    />
+                  }
                 >
-                  Upload a paper
-                </a>
-              </div>
-            ) : (
-              <div className="grid gap-4 lg:grid-cols-2">
-                {papers.map((paper) => {
-                  const isSelected = selectedIds.includes(paper.id);
-                  const selectionLocked =
-                    !isSelected && selectedIds.length >= MAX_IDEA_SELECTION;
+                  <h3>
+                    <Link href={`/papers/${paper.id}`} className="lnk">
+                      {paper.title}
+                    </Link>
+                  </h3>
+                  {paper.authors ? <p className="auth">{paper.authors}</p> : null}
+                  {paper.abstract ? <p className="abs">{paper.abstract}</p> : null}
+                  <div className="metaline">
+                    <Num>Added {formatDate(paper.created_at)}</Num>
+                    {typeof paper.has_structured_breakdown === "boolean" ? (
+                      <Tag tone={paper.has_structured_breakdown ? "default" : "quiet"}>
+                        {paper.has_structured_breakdown
+                          ? "breakdown ready"
+                          : "no breakdown yet"}
+                      </Tag>
+                    ) : null}
+                  </div>
+                </Item>
+              );
+            })
+          )}
+        </Section>
 
-                  return (
-                    <button
+        <Section>
+          {generationError ? (
+            <div style={{ marginBottom: "var(--space-lg)" }}>
+              <Notice tone="bad">{generationError}</Notice>
+            </div>
+          ) : null}
+          <Button onClick={handleGenerateIdeas} disabled={generationDisabled}>
+            {generationLoading ? "Generating" : "Generate ideas"}
+          </Button>
+          {!hasSource && !generationLoading ? (
+            <Provenance>
+              Pick at least one paper or type a topic, then this runs.
+            </Provenance>
+          ) : null}
+        </Section>
+
+        {generationLoading ? (
+          <Section>
+            <Working>
+              Reading the selected papers and drafting directions. This takes a
+              minute.
+            </Working>
+          </Section>
+        ) : null}
+
+        {resultIsStale ? (
+          <Section>
+            <WarnPanel title="These ideas are from an older selection">
+              The sources changed after this ran. Generate again to match what is
+              selected now.
+            </WarnPanel>
+          </Section>
+        ) : null}
+
+        {showResult && ideaResult ? (
+          <>
+            {ideaResult.warnings.length > 0 ? (
+              <Section>
+                <WarnPanel
+                  title={
+                    ideaResult.warnings.length === 1
+                      ? "One warning"
+                      : `${ideaResult.warnings.length} warnings`
+                  }
+                >
+                  {ideaResult.warnings.join(" ")}
+                </WarnPanel>
+              </Section>
+            ) : null}
+
+            <Section>
+              <SectionHead>Built from</SectionHead>
+              {ideaResult.selected_papers.length === 0 && !ideaResult.source_topic ? (
+                <Empty>No source basis was returned.</Empty>
+              ) : (
+                <ChipRow>
+                  {ideaResult.selected_papers.map((paper) => (
+                    <Chip
                       key={paper.id}
-                      onClick={() => handleTogglePaper(paper.id)}
-                      disabled={selectionLocked || generationLoading}
-                      aria-pressed={isSelected}
-                      className={`rounded-2xl border p-5 text-left transition-all ${
-                        isSelected
-                          ? "border-[var(--primary)] bg-[var(--primary)]/5"
-                          : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--primary)]/30"
-                      } ${
-                        selectionLocked || generationLoading
-                          ? "cursor-not-allowed opacity-60"
-                          : ""
-                      }`}
+                      href={`/papers/${paper.id}`}
+                      title={paper.title}
                     >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <h3 className="text-lg font-semibold line-clamp-2">
-                            {paper.title}
-                          </h3>
-                          {paper.authors && (
-                            <p className="mt-1 text-sm text-[var(--muted)] line-clamp-2">
-                              {paper.authors}
-                            </p>
-                          )}
-                        </div>
-
-                        <span
-                          className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
-                            isSelected
-                              ? "bg-[var(--primary)] text-white"
-                              : "border border-[var(--border)] text-[var(--muted)]"
-                          }`}
-                        >
-                          {isSelected
-                            ? "Selected"
-                            : selectionLocked
-                              ? "Limit reached"
-                              : "Select"}
-                        </span>
-                      </div>
-
-                      {paper.abstract && (
-                        <p className="mt-3 text-sm leading-relaxed text-[var(--muted)] line-clamp-4">
-                          {paper.abstract}
-                        </p>
-                      )}
-
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {typeof paper.has_structured_breakdown === "boolean" && (
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                              paper.has_structured_breakdown
-                                ? "bg-[var(--primary)]/10 text-[var(--primary)]"
-                                : "border border-[var(--border)] text-[var(--muted)]"
-                            }`}
-                          >
-                            {paper.has_structured_breakdown
-                              ? "Structured data ready"
-                              : "May need processing"}
-                          </span>
-                        )}
-                        <span className="rounded-full border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--muted)]">
-                          Added {formatDate(paper.created_at)}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {generationLoading && (
-              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] px-6 py-8">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                  <div className="h-6 w-6 shrink-0 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
-                  <div>
-                    <h2 className="text-lg font-semibold">Generating grounded ideas</h2>
-                    <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
-                      Reviewing selected sources, applying the requested focus,
-                      and preserving warnings for weak evidence.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {resultIsStale && (
-              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-600">
-                Sources changed. Run idea generation again for the current setup.
-              </div>
-            )}
-
-            {ideaResult && !resultIsStale && (
-              <section className="space-y-6 border-t border-[var(--border)] pt-8">
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                  <div>
-                    <h2 className="text-2xl font-semibold">Generated Ideas</h2>
-                    <p className="mt-1 text-sm text-[var(--muted)]">
-                      {ideaResult.ideas.length} ideas generated from the selected sources.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col gap-3 xl:items-end">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <input
-                        type="text"
-                        value={saveTitle}
-                        maxLength={1000}
-                        disabled={saveLoading}
-                        onChange={(event) => {
-                          setSaveTitle(event.target.value);
-                          setSaveError("");
-                          setSaveSuccess("");
-                        }}
-                        placeholder="Idea result title"
-                        className="w-full min-w-0 rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-2.5 text-sm outline-none transition-colors focus:border-[var(--primary)] sm:min-w-96"
-                      />
-                      <button
-                        onClick={handleSaveIdeas}
-                        disabled={saveLoading}
-                        className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-2.5 text-sm font-medium transition-colors hover:border-[var(--primary)]/30 hover:text-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {saveLoading ? "Saving..." : "Save Ideas"}
-                      </button>
-                    </div>
-                    {saveError && <p className="text-sm text-red-500">{saveError}</p>}
-                    {saveSuccess && (
-                      <p className="text-sm text-[var(--primary)]">{saveSuccess}</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-                  <h3 className="text-lg font-semibold">Source Basis</h3>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {ideaResult.selected_papers.map((paper) => (
-                      <a
-                        key={paper.id}
-                        href={`/papers/${paper.id}`}
-                        className="max-w-full rounded-full border border-[var(--border)] px-3 py-1.5 text-sm text-[var(--foreground)] transition-colors hover:border-[var(--primary)]/30 hover:text-[var(--primary)]"
-                      >
-                        <span className="line-clamp-1">{paper.title}</span>
-                      </a>
-                    ))}
-                    {ideaResult.source_topic && (
-                      <span className="max-w-full rounded-full bg-[var(--primary)]/10 px-3 py-1.5 text-sm text-[var(--primary)]">
-                        <span className="line-clamp-1">{ideaResult.source_topic}</span>
-                      </span>
-                    )}
-                    {ideaResult.selected_papers.length === 0 &&
-                      !ideaResult.source_topic && (
-                        <span className="text-sm text-[var(--muted)]">
-                          No source basis returned.
-                        </span>
-                      )}
-                  </div>
-                </div>
-
-                {ideaResult.warnings.length > 0 && (
-                  <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-                    <h3 className="text-lg font-semibold">Warnings</h3>
-                    <ul className="mt-4 space-y-3 text-sm text-[var(--muted)]">
-                      {ideaResult.warnings.map((warning) => (
-                        <li
-                          key={warning}
-                          className="rounded-xl bg-[var(--background)] px-4 py-3 leading-relaxed"
-                        >
-                          {warning}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                <div className="grid gap-5 lg:grid-cols-2">
-                  {ideaResult.ideas.map((idea, index) => (
-                    <article
-                      key={`${idea.title}-${index}`}
-                      className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5"
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap gap-2">
-                            <span className="rounded-full bg-[var(--primary)]/10 px-2.5 py-1 text-xs font-medium text-[var(--primary)]">
-                              {TRANSFORMATION_LABELS[idea.transformation_type]}
-                            </span>
-                            <span
-                              className={`rounded-full border px-2.5 py-1 text-xs font-medium ${FEASIBILITY_STYLES[idea.feasibility]}`}
-                            >
-                              {idea.feasibility} feasibility
-                            </span>
-                          </div>
-                          <h3 className="mt-3 text-xl font-semibold leading-snug">
-                            {idea.title}
-                          </h3>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 space-y-4 text-sm leading-6">
-                        <div>
-                          <h4 className="font-semibold text-[var(--foreground)]">
-                            Description
-                          </h4>
-                          <p className="mt-1 text-[var(--foreground)]/90">
-                            {idea.description}
-                          </p>
-                        </div>
-
-                        <div>
-                          <h4 className="font-semibold text-[var(--foreground)]">
-                            Why Interesting
-                          </h4>
-                          <p className="mt-1 text-[var(--foreground)]/90">
-                            {idea.why_interesting}
-                          </p>
-                        </div>
-
-                        <div>
-                          <h4 className="font-semibold text-[var(--foreground)]">
-                            Evidence Basis
-                          </h4>
-                          <ul className="mt-2 space-y-2">
-                            {idea.evidence_basis.map((evidence) => (
-                              <li
-                                key={evidence}
-                                className="rounded-lg bg-[var(--background)] px-3 py-2 text-[var(--muted)]"
-                              >
-                                {evidence}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-
-                        <div>
-                          <h4 className="font-semibold text-[var(--foreground)]">
-                            Risks or Unknowns
-                          </h4>
-                          <ul className="mt-2 space-y-2">
-                            {idea.risks_or_unknowns.map((risk) => (
-                              <li
-                                key={risk}
-                                className="rounded-lg bg-[var(--background)] px-3 py-2 text-[var(--muted)]"
-                              >
-                                {risk}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-
-                        {idea.warnings.length > 0 && (
-                          <div>
-                            <h4 className="font-semibold text-[var(--foreground)]">
-                              Warnings
-                            </h4>
-                            <ul className="mt-2 space-y-2">
-                              {idea.warnings.map((warning) => (
-                                <li
-                                  key={warning}
-                                  className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-amber-600"
-                                >
-                                  {warning}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
-                    </article>
+                      {paper.title}
+                    </Chip>
                   ))}
+                  {ideaResult.source_topic ? (
+                    <Chip>{ideaResult.source_topic}</Chip>
+                  ) : null}
+                </ChipRow>
+              )}
+            </Section>
+
+            <Section>
+              <SectionHead end={<Num>{ideaResult.ideas.length}</Num>}>
+                Ideas
+              </SectionHead>
+              <Provenance>
+                Written by the model from the papers above. Feasibility is its
+                estimate, not a review.
+              </Provenance>
+              {ideaResult.ideas.length === 0 ? (
+                <Empty>The model returned no ideas for these sources.</Empty>
+              ) : (
+                ideaResult.ideas.map((idea, index) => (
+                  <IdeaEntry key={`${idea.title}-${index}`} idea={idea} index={index} />
+                ))
+              )}
+            </Section>
+
+            <Section>
+              <SectionHead>Save this set</SectionHead>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "var(--space-md)",
+                  alignItems: "flex-start",
+                  flexWrap: "wrap",
+                }}
+              >
+                <Input
+                  value={saveTitle}
+                  maxLength={1000}
+                  disabled={saveLoading}
+                  onChange={(event) => {
+                    setSaveTitle(event.target.value);
+                    setSaveError("");
+                    setSaveSuccess("");
+                  }}
+                  placeholder="Title for this set"
+                  invalid={Boolean(saveError)}
+                  style={{ flex: "1 1 320px" }}
+                />
+                <Button onClick={handleSaveIdeas} disabled={saveLoading}>
+                  {saveLoading ? "Saving" : "Save"}
+                </Button>
+              </div>
+              {saveError ? (
+                <div style={{ marginTop: "var(--space-md)" }}>
+                  <Notice tone="bad">{saveError}</Notice>
                 </div>
-              </section>
-            )}
-          </section>
-        </div>
-      </main>
-    </div>
+              ) : null}
+              {saveSuccess ? (
+                <div style={{ marginTop: "var(--space-md)" }}>
+                  <Notice>{saveSuccess}</Notice>
+                </div>
+              ) : null}
+            </Section>
+          </>
+        ) : null}
+      </Body>
+    </>
   );
 }
 
@@ -812,9 +689,12 @@ export default function IdeasPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
-        </div>
+        <>
+          <TopBar crumb={<b>Ideas</b>} />
+          <Body className="col-mid">
+            <PageSkeleton />
+          </Body>
+        </>
       }
     >
       <IdeasPageContent />

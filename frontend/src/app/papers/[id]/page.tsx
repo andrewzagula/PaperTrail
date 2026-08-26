@@ -1,22 +1,51 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 
+import {
+  Blank,
+  Body,
+  Button,
+  Cite,
+  Empty,
+  Input,
+  Notice,
+  Num,
+  PageSkeleton,
+  Panel,
+  PanelHead,
+  Provenance,
+  Row,
+  Section,
+  SectionHead,
+  Spinner,
+  StatusPill,
+  TopBar,
+  Working,
+} from "@/components";
+import { cx } from "@/lib/cx";
 import { addPaperToCompare } from "@/lib/compare-selection";
 import { getApiErrorMessage } from "@/lib/api-errors";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+interface Citation {
+  section_title: string;
+  excerpt: string;
+  section_id?: string;
+}
+
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
-  citations: { section_title: string; excerpt: string; section_id?: string }[] | null;
+  citations: Citation[] | null;
   created_at: string;
 }
 
-interface Section {
+interface Section_ {
   id: string;
   section_title: string;
   section_order: number;
@@ -40,17 +69,42 @@ interface Paper {
   arxiv_url: string | null;
   created_at: string;
   structured_breakdown: Breakdown | null;
-  sections: Section[];
+  sections: Section_[];
 }
 
-const BREAKDOWN_LABELS: { key: keyof Breakdown; label: string }[] = [
+type TabKey = "breakdown" | "chat" | "sections";
+
+const BREAKDOWN_FIELDS: { key: keyof Breakdown; label: string }[] = [
   { key: "problem", label: "Problem" },
   { key: "method", label: "Method" },
-  { key: "key_contributions", label: "Key Contributions" },
+  { key: "key_contributions", label: "Key contributions" },
   { key: "results", label: "Results" },
   { key: "limitations", label: "Limitations" },
-  { key: "future_work", label: "Future Work" },
+  { key: "future_work", label: "Future work" },
 ];
+
+const TABS: { value: TabKey; label: string }[] = [
+  { value: "breakdown", label: "Breakdown" },
+  { value: "chat", label: "Chat" },
+  { value: "sections", label: "Sections" },
+];
+
+function formatDate(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "an unknown date";
+  }
+  return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** arXiv ids are a fact worth showing plainly, not a URL to decode. */
+function arxivId(url: string | null): string | null {
+  if (!url) {
+    return null;
+  }
+  const match = url.match(/(\d{4}\.\d{4,5}(v\d+)?)/);
+  return match ? `arXiv:${match[1]}` : null;
+}
 
 export default function PaperView() {
   const params = useParams();
@@ -60,18 +114,19 @@ export default function PaperView() {
   const [paper, setPaper] = useState<Paper | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const [tab, setTab] = useState<TabKey>("breakdown");
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState("");
-  const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatHistoryLoaded, setChatHistoryLoaded] = useState(false);
   const [compareNotice, setCompareNotice] = useState<{
-    tone: "info" | "warning";
+    tone: "quiet" | "bad";
     message: string;
   } | null>(null);
+
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     async function fetchPaper() {
@@ -82,9 +137,6 @@ export default function PaperView() {
         }
         const data = await res.json();
         setPaper(data);
-        if (data.sections.length > 0) {
-          setActiveSection(data.sections[0].id);
-        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load paper");
       } finally {
@@ -94,6 +146,27 @@ export default function PaperView() {
 
     fetchPaper();
   }, [paperId]);
+
+  useEffect(() => {
+    if (tab !== "chat" || chatHistoryLoaded) {
+      return;
+    }
+    async function loadHistory() {
+      try {
+        const res = await fetch(`${API_URL}/papers/${paperId}/chats`);
+        if (res.ok) {
+          const data = await res.json();
+          setChatMessages(data);
+        }
+      } catch {}
+      setChatHistoryLoaded(true);
+    }
+    loadHistory();
+  }, [tab, chatHistoryLoaded, paperId]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [chatMessages, chatLoading]);
 
   const handleAnalyze = async () => {
     if (!paper || analyzing) return;
@@ -109,9 +182,7 @@ export default function PaperView() {
       const breakdown = await res.json();
       setPaper({ ...paper, structured_breakdown: breakdown });
     } catch (err) {
-      setAnalyzeError(
-        err instanceof Error ? err.message : "Analysis failed"
-      );
+      setAnalyzeError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
       setAnalyzing(false);
     }
@@ -124,58 +195,29 @@ export default function PaperView() {
 
     if (result.added) {
       setCompareNotice({
-        tone: "info",
+        tone: "quiet",
         message:
           result.ids.length >= 2
-            ? `Added to compare list. ${result.ids.length} papers are ready to compare.`
-            : "Added to compare list. Add one more paper to run a comparison.",
+            ? `Added. ${result.ids.length} papers are ready to compare.`
+            : "Added. One more paper and you can run a comparison.",
       });
       return;
     }
 
     if (result.reason === "duplicate") {
       setCompareNotice({
-        tone: "info",
-        message: "This paper is already in your compare list.",
+        tone: "quiet",
+        message: "This paper is already on the compare list.",
       });
       return;
     }
 
     setCompareNotice({
-      tone: "warning",
-      message: "Your compare list already has 5 papers. Open compare to adjust the selection.",
+      tone: "bad",
+      message:
+        "The compare list already holds five papers. Open Compare to change the selection.",
     });
   };
-
-  const handleComparePapers = () => {
-    if (!paper) return;
-    router.push(`/compare?paper=${paper.id}`);
-  };
-
-  const handleGenerateIdeas = () => {
-    if (!paper) return;
-    router.push(`/ideas?paper=${encodeURIComponent(paper.id)}`);
-  };
-
-  const handleBuildImplementation = () => {
-    if (!paper) return;
-    router.push(`/papers/${encodeURIComponent(paper.id)}/implement`);
-  };
-
-  useEffect(() => {
-    if (!chatOpen || chatHistoryLoaded) return;
-    async function loadHistory() {
-      try {
-        const res = await fetch(`${API_URL}/papers/${paperId}/chats`);
-        if (res.ok) {
-          const data = await res.json();
-          setChatMessages(data);
-        }
-      } catch {}
-      setChatHistoryLoaded(true);
-    }
-    loadHistory();
-  }, [chatOpen, chatHistoryLoaded, paperId]);
 
   const handleChatSend = async () => {
     const message = chatInput.trim();
@@ -227,329 +269,336 @@ export default function PaperView() {
     } catch {}
   };
 
-  const scrollToSection = (sectionId: string) => {
-    setActiveSection(sectionId);
-    const el = document.getElementById(`section-${sectionId}`);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  const goToSection = (sectionId: string) => {
+    setTab("sections");
+    window.setTimeout(() => {
+      document
+        .getElementById(`section-${sectionId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="mx-auto w-6 h-6 border-2 border-[var(--primary)] border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-[var(--muted)]">Loading paper workspace...</p>
-        </div>
-      </div>
+      <>
+        <TopBar crumb={<b>Paper</b>} />
+        <Body>
+          <PageSkeleton />
+        </Body>
+      </>
     );
   }
 
   if (error || !paper) {
     return (
-      <div className="min-h-screen p-8 max-w-3xl mx-auto">
-        <a
-          href="/"
-          className="text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
-        >
-          &larr; Back
-        </a>
-        <div className="mt-8 p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
-          {error || "Paper not found"}
-        </div>
-      </div>
+      <>
+        <TopBar crumb={<b>Paper</b>} />
+        <Body>
+          <Blank
+            kind="Cannot open"
+            title="That paper is not here"
+            actions={
+              <Link href="/library" className="btn ghost">
+                Back to library
+              </Link>
+            }
+          >
+            {error || "Paper not found."}
+          </Blank>
+        </Body>
+      </>
     );
   }
 
+  const breakdown = paper.structured_breakdown;
+  const arxiv = arxivId(paper.arxiv_url);
+
   return (
-    <div className="min-h-screen">
-      <div className="border-b border-[var(--border)] p-8">
-        <div className="max-w-5xl mx-auto">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <a
-              href="/"
-              className="text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
-            >
-              &larr; Back
-            </a>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={handleAddToCompare}
-                className="px-4 py-2 rounded-lg border border-[var(--border)] text-sm font-medium text-[var(--foreground)] hover:border-[var(--primary)]/30 hover:text-[var(--primary)] transition-colors"
-              >
-                Add to Compare
-              </button>
-              <button
-                onClick={handleComparePapers}
-                className="px-4 py-2 rounded-lg border border-[var(--primary)]/20 bg-[var(--primary)]/5 text-sm font-medium text-[var(--primary)] hover:bg-[var(--primary)]/10 transition-colors"
-              >
-                Compare Papers
-              </button>
-              <button
-                onClick={handleGenerateIdeas}
-                className="px-4 py-2 rounded-lg border border-[var(--primary)]/20 bg-[var(--primary)]/5 text-sm font-medium text-[var(--primary)] hover:bg-[var(--primary)]/10 transition-colors"
-              >
-                Generate Ideas
-              </button>
-              <button
-                onClick={handleBuildImplementation}
-                className="px-4 py-2 rounded-lg border border-[var(--primary)]/20 bg-[var(--primary)]/5 text-sm font-medium text-[var(--primary)] hover:bg-[var(--primary)]/10 transition-colors"
-              >
-                Build Implementation
-              </button>
-              <button
-                onClick={() => setChatOpen(!chatOpen)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  chatOpen
-                    ? "bg-[var(--primary)] text-white"
-                    : "border border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)] hover:border-[var(--foreground)]/20"
-                }`}
-              >
-                {chatOpen ? "Close Chat" : "Ask Questions"}
-              </button>
-            </div>
+    <>
+      <TopBar
+        crumb={
+          <>
+            <Link href="/library" className="lnk">
+              Library
+            </Link>{" "}
+            <span aria-hidden>/</span> <b>{paper.title}</b>
+          </>
+        }
+      />
+      <Body>
+        <div className="paper-head">
+          <div>
+            <h1 className="page-title" style={{ maxWidth: "44ch" }}>
+              {paper.title}
+            </h1>
+            {paper.authors ? (
+              <p className="page-sub">
+                {paper.authors}
+                {arxiv ? <Num> {arxiv}</Num> : null}
+              </p>
+            ) : null}
           </div>
-
-          <h1 className="text-3xl font-bold mt-4 mb-2">{paper.title}</h1>
-
-          {paper.authors && (
-            <p className="text-[var(--muted)] text-sm mb-3">{paper.authors}</p>
-          )}
-
-          {paper.arxiv_url && (
-            <a
-              href={paper.arxiv_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-[var(--primary)] hover:underline"
-            >
-              View on arXiv
-            </a>
-          )}
-
-          {paper.abstract && (
-            <div className="mt-4 p-4 rounded-lg bg-[var(--card)] border border-[var(--border)]">
-              <h3 className="text-sm font-semibold mb-2 text-[var(--muted)] uppercase tracking-wide">
-                Abstract
-              </h3>
-              <p className="text-sm leading-relaxed">{paper.abstract}</p>
-            </div>
-          )}
-
-          {compareNotice && (
-            <div
-              className={`mt-4 rounded-lg border px-4 py-3 text-sm ${
-                compareNotice.tone === "warning"
-                  ? "border-red-500/20 bg-red-500/10 text-red-500"
-                  : "border-[var(--border)] bg-[var(--card)] text-[var(--foreground)]"
-              }`}
-            >
-              {compareNotice.message}
-            </div>
-          )}
+          <div className="paper-acts">
+            <Button onClick={() => router.push(`/ideas?paper=${encodeURIComponent(paper.id)}`)}>
+              Generate ideas
+            </Button>
+            <Button variant="ghost" onClick={handleAddToCompare}>
+              Add to comparison
+            </Button>
+          </div>
         </div>
-      </div>
-      <div className="max-w-5xl mx-auto px-8 pt-8">
-        {paper.structured_breakdown ? (
-          <div className="mb-8">
-            <h2 className="text-lg font-semibold mb-4">Structured Breakdown</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {BREAKDOWN_LABELS.map(({ key, label }) => (
-                <div
-                  key={key}
-                  className="p-4 rounded-xl border border-[var(--border)] bg-[var(--card)]"
+
+        <dl className="paper-meta">
+          <div>
+            <dt>Added</dt>
+            <dd>
+              <Num>{formatDate(paper.created_at)}</Num>
+            </dd>
+          </div>
+          <div>
+            <dt>Sections</dt>
+            <dd>
+              <Num>{paper.sections.length}</Num>
+            </dd>
+          </div>
+          <div>
+            <dt>Breakdown</dt>
+            <dd>
+              <StatusPill tone={breakdown ? "ok" : "idle"}>
+                {breakdown ? "ready" : "not generated"}
+              </StatusPill>
+            </dd>
+          </div>
+          {paper.arxiv_url ? (
+            <div>
+              <dt>Source</dt>
+              <dd>
+                <a
+                  href={paper.arxiv_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="lnk"
                 >
-                  <h3 className="text-sm font-semibold text-[var(--primary)] uppercase tracking-wide mb-2">
-                    {label}
-                  </h3>
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                    {paper.structured_breakdown![key]}
-                  </p>
+                  arXiv
+                </a>
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+
+        {compareNotice ? (
+          <div style={{ marginTop: "var(--space-lg)" }}>
+            <Notice tone={compareNotice.tone}>{compareNotice.message}</Notice>
+          </div>
+        ) : null}
+
+        {/* Three panels plus one destination. Implement is a link, not a
+            panel, because it opens a page of its own. */}
+        <div className="tabs" style={{ marginTop: "var(--space-3xl)" }}>
+          {TABS.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              className={cx("tab", tab === item.value && "on")}
+              aria-current={tab === item.value ? "true" : undefined}
+              onClick={() => setTab(item.value)}
+            >
+              {item.label}
+            </button>
+          ))}
+          <Link href={`/papers/${paper.id}/implement`} className="tab">
+            Implement
+            <StatusPill tone="idle">plan</StatusPill>
+          </Link>
+        </div>
+
+        {tab === "breakdown" ? (
+          breakdown ? (
+            <div className="reading">
+              <Provenance>
+                Generated from the paper&apos;s own text. The abstract below it is
+                the paper&apos;s own words, unchanged.
+              </Provenance>
+              {BREAKDOWN_FIELDS.map(({ key, label }) => (
+                <div key={key} className="bd-sec">
+                  <h3>{label}</h3>
+                  <p>{breakdown[key]}</p>
                 </div>
               ))}
+              {paper.abstract ? (
+                <div className="bd-sec">
+                  <h3>Abstract</h3>
+                  <p>{paper.abstract}</p>
+                  <Cite>The paper&apos;s own words</Cite>
+                </div>
+              ) : null}
             </div>
-          </div>
-        ) : (
-          <div className="mb-8 flex flex-wrap items-center gap-4">
-            <button
-              onClick={handleAnalyze}
-              disabled={analyzing}
-              className="px-5 py-2.5 bg-[var(--primary)] hover:bg-[var(--primary-hover)] disabled:opacity-50 text-white rounded-lg font-medium transition-colors text-sm"
+          ) : (
+            <Section>
+              <Blank
+                kind="Nothing generated yet"
+                quiet
+                title="No breakdown for this paper yet"
+                actions={
+                  <Button onClick={handleAnalyze} disabled={analyzing}>
+                    {analyzing ? "Reading the paper" : "Generate breakdown"}
+                  </Button>
+                }
+              >
+                A breakdown restates the paper in six fields: problem, method,
+                contributions, results, limitations, and future work. It takes a
+                minute and only happens when you ask.
+              </Blank>
+              {paper.abstract ? (
+                <div className="reading">
+                  <div className="bd-sec">
+                    <h3>Abstract</h3>
+                    <p>{paper.abstract}</p>
+                    <Cite>The paper&apos;s own words</Cite>
+                  </div>
+                </div>
+              ) : null}
+              {analyzing ? (
+                <div style={{ marginTop: "var(--space-xl)" }}>
+                  <Working>Reading the paper and drafting the six fields</Working>
+                </div>
+              ) : null}
+              {analyzeError ? (
+                <div style={{ marginTop: "var(--space-xl)" }}>
+                  <Notice tone="bad">{analyzeError}</Notice>
+                </div>
+              ) : null}
+            </Section>
+          )
+        ) : null}
+
+        {tab === "chat" ? (
+          <Section>
+            <SectionHead
+              end={
+                chatMessages.length > 0 ? (
+                  <Button variant="ghost" size="sm" onClick={handleClearChat}>
+                    Clear
+                  </Button>
+                ) : undefined
+              }
             >
-              {analyzing ? "Analyzing..." : "Analyze Paper"}
-            </button>
-            {analyzing && (
-              <span className="text-sm text-[var(--muted)]">
-                Generating structured breakdown...
-              </span>
+              Ask about this paper
+            </SectionHead>
+            <Provenance>
+              Answers are drawn from this paper&apos;s sections and cite them. If
+              the paper does not say, the answer says so.
+            </Provenance>
+
+            {chatMessages.length === 0 && !chatLoading ? (
+              <Empty>
+                Nothing asked yet. Try what the evaluation setup was, or what the
+                paper does not cover.
+              </Empty>
+            ) : (
+              <div className="chat">
+                {chatMessages.map((msg) => (
+                  <div
+                    key={msg.id}
+                    className={cx("msg", msg.role === "user" && "you")}
+                  >
+                    <p>{msg.content}</p>
+                    {msg.citations && msg.citations.length > 0 ? (
+                      <div className="srcs">
+                        {msg.citations.map((cite, i) =>
+                          cite.section_id ? (
+                            <button
+                              key={i}
+                              type="button"
+                              className="cite"
+                              onClick={() => goToSection(cite.section_id!)}
+                            >
+                              {cite.section_title}
+                            </button>
+                          ) : (
+                            <Cite key={i}>{cite.section_title}</Cite>
+                          ),
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+                {chatLoading ? (
+                  <div className="msg">
+                    <Working>Reading the sections</Working>
+                  </div>
+                ) : null}
+                <div ref={chatEndRef} />
+              </div>
             )}
-            {analyzeError && (
-              <span className="text-sm text-red-500">{analyzeError}</span>
-            )}
-          </div>
-        )}
-      </div>
-      <div
-        className={`mx-auto flex w-full flex-col gap-6 px-8 pb-8 ${
-          chatOpen
-            ? "max-w-7xl xl:flex-row xl:items-start"
-            : "max-w-5xl"
-        }`}
-      >
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-col gap-6 lg:flex-row">
-            <nav className="shrink-0 lg:sticky lg:top-8 lg:w-56 lg:self-start">
-              <h3 className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wide mb-3">
-                Sections
-              </h3>
-              <ul className="flex gap-2 overflow-x-auto pb-2 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
-                {paper.sections.map((section) => (
-                  <li key={section.id} className="shrink-0 lg:shrink">
-                    <button
-                      onClick={() => scrollToSection(section.id)}
-                      className={`w-full whitespace-nowrap text-left px-3 py-2 rounded-lg text-sm transition-colors lg:whitespace-normal ${
-                        activeSection === section.id
-                          ? "bg-[var(--primary)]/10 text-[var(--primary)] font-medium"
-                          : "text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--card)]"
-                      }`}
+
+            <div className="chat-form">
+              <Input
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    handleChatSend();
+                  }
+                }}
+                placeholder="Ask a question about this paper"
+                disabled={chatLoading}
+                aria-label="Ask a question about this paper"
+              />
+              <Button
+                onClick={handleChatSend}
+                disabled={chatLoading || !chatInput.trim()}
+              >
+                {chatLoading ? <Spinner /> : "Send"}
+              </Button>
+            </div>
+          </Section>
+        ) : null}
+
+        {tab === "sections" ? (
+          paper.sections.length === 0 ? (
+            <Section>
+              <Empty>
+                No sections were extracted from this paper, so chat and breakdown
+                have nothing to draw on.
+              </Empty>
+            </Section>
+          ) : (
+            <>
+              <Section>
+                <Panel>
+                  <PanelHead end={<Num>{paper.sections.length}</Num>}>
+                    Jump to
+                  </PanelHead>
+                  {paper.sections.map((section) => (
+                    <Row
+                      key={section.id}
+                      onClick={() => goToSection(section.id)}
+                      end={<Num>{section.section_order}</Num>}
                     >
                       {section.section_title}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-            <div className="flex-1 min-w-0">
-              {paper.sections.map((section) => (
-                <div
-                  key={section.id}
-                  id={`section-${section.id}`}
-                  className={`mb-8 p-6 rounded-xl border transition-all ${
-                    activeSection === section.id
-                      ? "border-[var(--primary)]/30 bg-[var(--card)]"
-                      : "border-[var(--border)] bg-[var(--card)]"
-                  }`}
-                >
-                  <h2 className="text-xl font-semibold mb-4">
-                    {section.section_title}
-                  </h2>
-                  <div className="text-sm leading-relaxed whitespace-pre-wrap text-[var(--foreground)]/85">
-                    {section.content}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+                    </Row>
+                  ))}
+                </Panel>
+              </Section>
 
-        {chatOpen && (
-          <aside className="w-full min-w-0 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--background)] xl:sticky xl:top-6 xl:h-[calc(100vh-3rem)] xl:w-[min(420px,34vw)]">
-          <div className="flex h-[min(720px,calc(100vh-3rem))] flex-col xl:h-full">
-            <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
-              <h3 className="font-semibold text-sm">Ask about this paper</h3>
-              {chatMessages.length > 0 && (
-                <button
-                  onClick={handleClearChat}
-                  className="text-xs text-[var(--muted)] hover:text-red-400 transition-colors"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {chatMessages.length === 0 && !chatLoading && (
-                <div className="text-center text-[var(--muted)] text-sm mt-8">
-                  <p className="mb-2">Ask a question about this paper.</p>
-                  <p className="text-xs">
-                    Answers are grounded in the paper&apos;s sections with citations.
-                  </p>
-                </div>
-              )}
-
-              {chatMessages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                >
+              <div className="reading">
+                {paper.sections.map((section) => (
                   <div
-                    className={`max-w-[85%] min-w-0 break-words rounded-xl px-4 py-3 text-sm ${
-                      msg.role === "user"
-                        ? "bg-[var(--primary)] text-white"
-                        : "bg-[var(--card)] border border-[var(--border)]"
-                    }`}
+                    key={section.id}
+                    id={`section-${section.id}`}
+                    className="bd-sec"
                   >
-                    <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
-
-                    {msg.citations && msg.citations.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-[var(--border)]/50 space-y-2">
-                        <p className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wide">
-                          Sources
-                        </p>
-                        {msg.citations.map((cite, i) => (
-                          <button
-                            key={i}
-                            onClick={() => {
-                              if (cite.section_id) scrollToSection(cite.section_id);
-                            }}
-                            className="block w-full text-left text-xs p-2 rounded-lg bg-[var(--background)] hover:bg-[var(--primary)]/5 transition-colors"
-                          >
-                            <span className="font-medium text-[var(--primary)]">
-                              {cite.section_title}
-                            </span>
-                            {cite.excerpt && (
-                              <span className="block text-[var(--muted)] mt-0.5 line-clamp-2">
-                                &ldquo;{cite.excerpt}&rdquo;
-                              </span>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    <h3>{section.section_title}</h3>
+                    <p>{section.content}</p>
                   </div>
-                </div>
-              ))}
-
-              {chatLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl px-4 py-3">
-                    <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
-                      <div className="w-4 h-4 border-2 border-[var(--primary)] border-t-transparent rounded-full animate-spin" />
-                      Thinking...
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="p-4 border-t border-[var(--border)]">
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleChatSend();
-                    }
-                  }}
-                  placeholder="Ask a question..."
-                  disabled={chatLoading}
-                  className="min-w-0 flex-1 px-4 py-2.5 rounded-lg border border-[var(--border)] bg-[var(--card)] text-sm focus:outline-none focus:border-[var(--primary)] disabled:opacity-50 placeholder:text-[var(--muted)]"
-                />
-                <button
-                  onClick={handleChatSend}
-                  disabled={chatLoading || !chatInput.trim()}
-                  className="px-4 py-2.5 bg-[var(--primary)] hover:bg-[var(--primary-hover)] disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors disabled:cursor-not-allowed"
-                >
-                  Send
-                </button>
+                ))}
               </div>
-            </div>
-          </div>
-          </aside>
-        )}
-      </div>
-    </div>
+            </>
+          )
+        ) : null}
+      </Body>
+    </>
   );
 }
