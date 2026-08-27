@@ -2,6 +2,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -32,6 +33,7 @@ PDF_DIR = settings.data_dir / "pdfs"
 PDF_DIR.mkdir(exist_ok=True)
 
 PDF_TEXT_EXTRACTION_DETAIL = "Could not extract text from PDF."
+PDF_NOT_AVAILABLE_DETAIL = "This paper's PDF is not available on disk."
 
 
 class IngestArxivRequest(BaseModel):
@@ -456,6 +458,34 @@ def get_paper(paper_id: str, db: Session = Depends(get_db)):
         ],
     )
 
+
+@router.get("/{paper_id}/pdf")
+def get_paper_pdf(paper_id: str, db: Session = Depends(get_db)):
+    """Serve the PDF ingestion already downloaded.
+
+    pdf_path is an absolute path stored in the database, so it is resolved and
+    checked for containment before use: a malformed or tampered row must not
+    turn this into an arbitrary file read.
+    """
+    paper = _get_paper_or_404(db, paper_id)
+
+    if not paper.pdf_path:
+        raise HTTPException(status_code=404, detail=PDF_NOT_AVAILABLE_DETAIL)
+
+    resolved = Path(paper.pdf_path).resolve()
+    try:
+        resolved.relative_to(PDF_DIR.resolve())
+    except ValueError:
+        raise HTTPException(status_code=404, detail=PDF_NOT_AVAILABLE_DETAIL)
+
+    if not resolved.is_file():
+        raise HTTPException(status_code=404, detail=PDF_NOT_AVAILABLE_DETAIL)
+
+    return FileResponse(
+        resolved,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'inline; filename="' + resolved.name + '"'},
+    )
 
 @router.post("/{paper_id}/reembed", response_model=ReembedPaperResponse)
 def reembed_paper_endpoint(paper_id: str, db: Session = Depends(get_db)):
