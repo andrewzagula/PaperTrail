@@ -8,6 +8,7 @@ from app.config import settings
 from app.services.errors import UserSafeServiceError
 
 ARXIV_ID_PATTERN = re.compile(r"(\d{4}\.\d{4,5})(v\d+)?")
+ARXIV_ABS_URL = "https://arxiv.org/abs/{paper_id}"
 ARXIV_PDF_URL = "https://arxiv.org/pdf/{paper_id}"
 ARXIV_API_URL = "http://export.arxiv.org/api/query?id_list={paper_id}"
 ARXIV_UNAVAILABLE_DETAIL = "Could not reach arXiv. Please try again."

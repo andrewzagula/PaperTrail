@@ -41,13 +41,29 @@ function formatDate(value: string): string {
   return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+const ARXIV_ID = /(\d{4}\.\d{4,5}(v\d+)?)/;
+
 /** arXiv ids are a fact worth showing plainly, not a URL to decode. */
 function arxivId(url: string | null): string | null {
   if (!url) {
     return null;
   }
-  const match = url.match(/(\d{4}\.\d{4,5}(v\d+)?)/);
+  const match = url.match(ARXIV_ID);
   return match ? `arXiv:${match[1]}` : null;
+}
+
+/** Ingest stores whatever the user pasted — a bare id or a schemeless
+    link renders as a relative href, so the anchor rebuilds the absolute
+    URL instead of trusting the stored value. */
+function arxivHref(url: string | null): string | null {
+  if (!url) {
+    return null;
+  }
+  const match = url.match(ARXIV_ID);
+  if (match) {
+    return `https://arxiv.org/abs/${match[1]}`;
+  }
+  return /^https?:\/\//.test(url) ? url : null;
 }
 
 /* ------------------------------------------------------------------
@@ -212,6 +228,7 @@ export default function PaperLayout({ children }: { children: ReactNode }) {
 
   const breakdown = paper.structured_breakdown;
   const arxiv = arxivId(paper.arxiv_url);
+  const arxivLink = arxivHref(paper.arxiv_url);
 
   return (
     <>
@@ -281,12 +298,12 @@ export default function PaperLayout({ children }: { children: ReactNode }) {
               </StatusPill>
             </dd>
           </div>
-          {paper.arxiv_url ? (
+          {arxivLink ? (
             <div>
               <dt>Source</dt>
               <dd>
                 <a
-                  href={paper.arxiv_url}
+                  href={arxivLink}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="lnk"

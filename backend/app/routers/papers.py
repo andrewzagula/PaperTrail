@@ -11,6 +11,7 @@ from app.database import get_db
 from app.llm import get_provider_error_response
 from app.models.models import Chat, Paper, PaperSection
 from app.services.arxiv_fetcher import (
+    ARXIV_ABS_URL,
     download_arxiv_pdf,
     extract_arxiv_id,
     fetch_arxiv_metadata,
@@ -270,7 +271,7 @@ async def ingest_arxiv(req: IngestArxivRequest, db: Session = Depends(get_db)):
         title=title,
         authors=authors,
         abstract=abstract,
-        arxiv_url=req.arxiv_url,
+        arxiv_url=ARXIV_ABS_URL.format(paper_id=arxiv_id),
         pdf_path=str(pdf_path),
         raw_text=raw_text,
         sections_data=sections_data,

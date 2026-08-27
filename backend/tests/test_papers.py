@@ -339,6 +339,49 @@ class PaperEndpointTests(unittest.TestCase):
         with self.session_local() as db:
             self.assertEqual(db.query(Paper).count(), 0)
 
+    def test_arxiv_ingest_stores_canonical_arxiv_url(self):
+        pasted_forms = [
+            "2401.12345",
+            "arxiv.org/abs/2401.12345",
+            "https://arxiv.org/abs/2401.12345",
+        ]
+        for pasted in pasted_forms:
+            with self.subTest(pasted=pasted):
+                with patch(
+                    "app.routers.papers.fetch_arxiv_metadata",
+                    return_value={
+                        "title": "Canonical Paper",
+                        "authors": "A. Tester",
+                        "abstract": "Abstract",
+                    },
+                ), patch(
+                    "app.routers.papers.download_arxiv_pdf",
+                    return_value=Path("/tmp/papertrail-test.pdf"),
+                ), patch(
+                    "app.routers.papers.extract_text",
+                    return_value="Abstract\nCanonical prose.",
+                ), patch(
+                    "app.routers.papers.split_into_sections",
+                    return_value=[
+                        {"title": "Abstract", "order": 0, "content": "Canonical prose."}
+                    ],
+                ), patch(
+                    "app.routers.papers.sync_paper_embeddings",
+                    return_value=0,
+                ):
+                    response = self.client.post(
+                        "/papers/ingest/arxiv",
+                        json={"arxiv_url": pasted},
+                    )
+
+                self.assertEqual(response.status_code, 200)
+                paper_id = uuid.UUID(response.json()["id"])
+                with self.session_local() as db:
+                    stored = (
+                        db.query(Paper).filter(Paper.id == paper_id).one().arxiv_url
+                    )
+                self.assertEqual(stored, "https://arxiv.org/abs/2401.12345")
+
     def test_pdf_ingest_still_saves_paper_when_embedding_fails(self):
         sections = [
             {
