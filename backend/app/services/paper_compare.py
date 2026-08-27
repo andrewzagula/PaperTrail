@@ -20,6 +20,18 @@ NOT_EXPLICITLY_DISCUSSED_ACROSS_PAPERS = (
 )
 MAX_COMPARE_SECTION_CHARS = 50000
 
+# How many of the six compare fields must come back as the sentinel before a
+# paper is worth profiling a second time against a wider slice of its text.
+MIN_SENTINEL_FIELDS_TO_WIDEN = 4
+
+# How many sections the widened, title-independent selection may carry.
+MAX_WIDENED_COMPARE_SECTIONS = 8
+
+WIDENED_COMPARE_CONTEXT_WARNING = (
+    "Compare profile was rebuilt from the paper's longest sections because "
+    "title-based section selection produced too little to compare on."
+)
+
 BREAKDOWN_FIELDS = {
     "problem": "problem",
     "method": "method",
@@ -144,6 +156,8 @@ def compare_papers(db: Session, user_id: uuid.UUID, paper_ids: list[str]) -> dic
             normalize_profiles=_compare_graph_normalize_profiles,
             synthesize_narrative=_compare_graph_synthesize_narrative,
             build_response=_compare_graph_build_response,
+            widen_context=_compare_graph_widen_context,
+            should_widen_context=_compare_graph_should_widen_context,
         )
     )
     result = graph.invoke({
@@ -207,6 +221,7 @@ def _compare_graph_normalize_profiles(state: CompareGraphState) -> CompareGraphS
                 breakdown=paper_context["breakdown"],
                 sections=paper_context["sections"],
                 seed_warnings=paper_context["breakdown_warnings"],
+                preselected=paper_context.get("preselected", False),
             )
         )
 
@@ -227,6 +242,62 @@ def _compare_graph_synthesize_narrative(state: CompareGraphState) -> CompareGrap
         "narrative_summary": narrative_summary,
         "warnings": warnings,
     }
+
+
+def _compare_graph_should_widen_context(state: CompareGraphState) -> bool:
+    """Whether any paper is worth profiling again against a wider slice of text."""
+    paper_contexts = state.get("paper_contexts") or []
+    profiles = state.get("normalized_profiles") or []
+
+    for paper_context, profile in zip(paper_contexts, profiles):
+        if _should_widen_paper_context(paper_context, profile):
+            return True
+
+    return False
+
+
+def _should_widen_paper_context(paper_context: dict, profile: dict) -> bool:
+    if paper_context.get("widened"):
+        return False
+    if not _compare_profile_is_sparse(profile):
+        return False
+
+    sections = paper_context.get("sections") or []
+    widened = _select_substantive_compare_sections(sections)
+    if not widened:
+        return False
+
+    # Re-running the same selection would spend a second model call to produce
+    # the same context, so only widen when the strategies actually diverge.
+    current = _select_relevant_sections(sections)
+    return [section.section_order for section in widened] != [
+        section.section_order for section in current
+    ]
+
+
+def _compare_graph_widen_context(state: CompareGraphState) -> CompareGraphState:
+    profiles = state.get("normalized_profiles") or []
+    widened_contexts = []
+
+    for paper_context, profile in zip(state.get("paper_contexts") or [], profiles):
+        if not _should_widen_paper_context(paper_context, profile):
+            widened_contexts.append(paper_context)
+            continue
+
+        widened_contexts.append({
+            **paper_context,
+            "sections": _select_substantive_compare_sections(
+                paper_context.get("sections") or []
+            ),
+            "widened": True,
+            "preselected": True,
+            "breakdown_warnings": _dedupe_strings([
+                *(paper_context.get("breakdown_warnings") or []),
+                WIDENED_COMPARE_CONTEXT_WARNING,
+            ]),
+        })
+
+    return {"paper_contexts": widened_contexts}
 
 
 def _compare_graph_build_response(state: CompareGraphState) -> CompareGraphState:
@@ -270,6 +341,7 @@ def normalize_paper_for_compare(
     breakdown: dict,
     sections: list[PaperSection],
     seed_warnings: list[str] | None = None,
+    preselected: bool = False,
 ) -> dict:
     compare_details: dict = {}
     profile_warnings = list(seed_warnings or [])
@@ -280,6 +352,7 @@ def normalize_paper_for_compare(
             abstract=paper.abstract or "",
             breakdown=breakdown,
             sections=sections,
+            preselected=preselected,
         )
     except Exception as error:
         print(f"Warning: compare profile extraction failed for paper {paper.id}: {error}")
@@ -342,8 +415,9 @@ def extract_compare_profile_details(
     abstract: str,
     breakdown: dict,
     sections: list[PaperSection],
+    preselected: bool = False,
 ) -> dict:
-    section_context = _build_section_context(sections)
+    section_context = _build_section_context(sections, preselected=preselected)
     breakdown_json = json.dumps(breakdown, ensure_ascii=True)
 
     return _request_structured_json(
@@ -582,8 +656,18 @@ def _normalize_compare_synthesis(value: object) -> dict:
     return normalized
 
 
-def _build_section_context(sections: list[PaperSection]) -> str:
-    selected_sections = _select_relevant_sections(sections)
+def _build_section_context(
+    sections: list[PaperSection],
+    *,
+    preselected: bool = False,
+) -> str:
+    """Build model context from sections.
+
+    `preselected` means the caller already chose these sections deliberately -
+    the widened path does - so running title-based selection over them again
+    would just discard the wider choice.
+    """
+    selected_sections = sections if preselected else _select_relevant_sections(sections)
     context_parts = []
     remaining_chars = MAX_COMPARE_SECTION_CHARS
 
@@ -618,6 +702,42 @@ def _select_relevant_sections(sections: list[PaperSection]) -> list[PaperSection
         selected_indices = list(range(min(len(sections), 6)))
 
     return [sections[index] for index in selected_indices]
+
+
+def _select_substantive_compare_sections(
+    sections: list[PaperSection],
+) -> list[PaperSection]:
+    """Pick sections by weight of content rather than by title.
+
+    Used when title matching produced a profile the model could not fill in.
+    The material is usually still in the paper, just under headings the keyword
+    list does not recognise (or ones the PDF parser mangled), so the longest
+    sections are the best available proxy. Reading order is restored afterwards
+    so the context still reads like the paper.
+    """
+    with_content = [
+        section for section in sections if str(section.content or "").strip()
+    ]
+    if not with_content:
+        return []
+
+    heaviest = sorted(
+        with_content,
+        key=lambda section: len(section.content or ""),
+        reverse=True,
+    )[:MAX_WIDENED_COMPARE_SECTIONS]
+
+    return sorted(heaviest, key=lambda section: section.section_order)
+
+
+def _compare_profile_is_sparse(profile: dict) -> bool:
+    """Whether a profile came back too empty to be worth showing as-is."""
+    missing = sum(
+        1
+        for field in COMPARE_FIELDS
+        if profile.get(field) == NOT_EXPLICITLY_DISCUSSED
+    )
+    return missing >= MIN_SENTINEL_FIELDS_TO_WIDEN
 
 
 def _build_comparison_table(normalized_profiles: list[dict]) -> dict:
