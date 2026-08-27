@@ -55,5 +55,31 @@ class ReflowTextTests(unittest.TestCase):
         self.assertEqual(reflow_text("one\r\ntwo"), "one two")
 
 
+class SplitIntoSectionsReflowTests(unittest.TestCase):
+    def test_section_content_comes_back_reflowed(self):
+        from app.services.section_splitter import split_into_sections
+
+        raw = (
+            "Introduction\nachieved re-\nmarkable success\n\n"
+            "Method\nwe pro-\npose a model"
+        )
+        contents = " ".join(
+            section["content"] for section in split_into_sections(raw)
+        )
+
+        self.assertIn("remarkable success", contents)
+        self.assertNotIn("re-\nmarkable", contents)
+
+    def test_headings_are_still_detected(self):
+        """Reflow must run after heading detection, never before."""
+        from app.services.section_splitter import split_into_sections
+
+        raw = "Introduction\nsome body text\n\nMethod\nmore body text"
+        titles = [section["title"] for section in split_into_sections(raw)]
+
+        self.assertIn("Introduction", titles)
+        self.assertIn("Method", titles)
+
+
 if __name__ == "__main__":
     unittest.main()

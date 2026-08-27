@@ -1,5 +1,7 @@
 import re
 
+from app.services.text_reflow import reflow_text
+
 STANDARD_HEADINGS = [
     "abstract",
     "introduction",
@@ -87,7 +89,12 @@ def split_into_sections(raw_text: str) -> list[dict]:
     if len(sections) <= 1:
         sections = _fallback_split(raw_text)
 
-    return sections
+    # Applied here, after heading detection has used the line structure it
+    # depends on, so every ingest path gets prose without having to ask.
+    for section in sections:
+        section["content"] = reflow_text(section["content"])
+
+    return [section for section in sections if section["content"]]
 
 
 def _detect_heading(line: str) -> str | None:
