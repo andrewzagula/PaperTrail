@@ -83,6 +83,16 @@ class PaperPdfEndpointTests(unittest.TestCase):
         self.assertEqual(response.headers["content-type"], "application/pdf")
         self.assertEqual(response.content, MINIMAL_PDF)
 
+    def test_answers_head_so_the_ui_can_probe_availability(self):
+        """The Paper tab probes with HEAD before rendering the iframe."""
+        path = self._write_pdf("test-" + str(uuid.uuid4()) + ".pdf")
+        paper_id = self._paper(str(path))
+
+        response = self.client.head("/papers/" + str(paper_id) + "/pdf")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "application/pdf")
+
     def test_404s_when_the_paper_has_no_pdf_path(self):
         paper_id = self._paper(None)
 

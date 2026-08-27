@@ -1420,3 +1420,19 @@ button.code-head:disabled {
   }
   .cmp-table th:first-child { background: var(--panel); }
 }
+
+/* The PDF is the one place the paper appears as its authors set it: figures,
+   equations and tables that extraction cannot recover. Give it the height. */
+.pdf-frame {
+  margin-top: var(--space-2xl);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--panel);
+}
+.pdf-frame iframe {
+  display: block;
+  width: 100%;
+  height: 80vh;
+  border: 0;
+}

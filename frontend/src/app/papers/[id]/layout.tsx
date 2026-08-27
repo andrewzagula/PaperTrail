@@ -30,6 +30,7 @@ const TABS: { value: TabKey; label: string }[] = [
   { value: "breakdown", label: "Breakdown" },
   { value: "chat", label: "Chat" },
   { value: "sections", label: "Sections" },
+  { value: "paper", label: "Paper" },
 ];
 
 function formatDate(value: string): string {

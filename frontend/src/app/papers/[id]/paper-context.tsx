@@ -41,7 +41,7 @@ export interface Paper {
 }
 
 /** The three panels that share one route. The plan is a route of its own. */
-export type TabKey = "breakdown" | "chat" | "sections";
+export type TabKey = "breakdown" | "chat" | "sections" | "paper";
 
 export interface PaperContextValue {
   paper: Paper;

@@ -63,6 +63,7 @@ export default function PaperPanels() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatHistoryLoaded, setChatHistoryLoaded] = useState(false);
+  const [pdfAvailable, setPdfAvailable] = useState<boolean | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -82,6 +83,26 @@ export default function PaperPanels() {
     }
     loadHistory();
   }, [tab, chatHistoryLoaded, paperId]);
+
+  useEffect(() => {
+    if (tab !== "paper" || pdfAvailable !== null) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/papers/${paperId}/pdf`, {
+          method: "HEAD",
+        });
+        if (!cancelled) setPdfAvailable(res.ok);
+      } catch {
+        if (!cancelled) setPdfAvailable(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, pdfAvailable, paperId]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -359,6 +380,20 @@ export default function PaperPanels() {
               ))}
             </div>
           </>
+        )
+      ) : tab === "paper" ? (
+        pdfAvailable === false ? (
+          <Empty>
+            This paper has no PDF stored on disk, so the original cannot be
+            shown. The extracted text is still available under Sections.
+          </Empty>
+        ) : (
+          <div className="pdf-frame">
+            <iframe
+              src={`${API_URL}/papers/${paperId}/pdf`}
+              title={`${paper.title} (PDF)`}
+            />
+          </div>
         )
       ) : null}
     </>

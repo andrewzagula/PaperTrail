@@ -460,6 +460,7 @@ def get_paper(paper_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{paper_id}/pdf")
+@router.head("/{paper_id}/pdf")
 def get_paper_pdf(paper_id: str, db: Session = Depends(get_db)):
     """Serve the PDF ingestion already downloaded.
 
