@@ -349,7 +349,12 @@ export default function PaperPanels() {
                   className="bd-sec"
                 >
                   <h3>{section.section_title}</h3>
-                  <p>{section.content}</p>
+                  {section.content
+                    .split("\n\n")
+                    .filter((para) => para.trim())
+                    .map((para, index) => (
+                      <p key={index}>{para}</p>
+                    ))}
                 </div>
               ))}
             </div>
