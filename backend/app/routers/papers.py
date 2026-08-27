@@ -260,6 +260,8 @@ async def ingest_arxiv(req: IngestArxivRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=422, detail=PDF_TEXT_EXTRACTION_DETAIL)
 
     sections_data = split_into_sections(raw_text)
+    if not sections_data:
+        raise HTTPException(status_code=422, detail=PDF_TEXT_EXTRACTION_DETAIL)
 
     title = metadata["title"] or "Untitled"
     authors = metadata["authors"] or ""
@@ -312,6 +314,9 @@ async def ingest_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)
         _discard_upload(pdf_path)
         _raise_user_safe_http_error(error)
     sections_data = split_into_sections(raw_text)
+    if not sections_data:
+        _discard_upload(pdf_path)
+        raise HTTPException(status_code=422, detail=PDF_TEXT_EXTRACTION_DETAIL)
 
     title = pdf_meta["title"] or Path(file.filename).stem
     authors = pdf_meta["authors"] or ""

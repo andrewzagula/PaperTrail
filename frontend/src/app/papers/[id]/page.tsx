@@ -387,14 +387,14 @@ export default function PaperPanels() {
             This paper has no PDF stored on disk, so the original cannot be
             shown. The extracted text is still available under Sections.
           </Empty>
-        ) : (
+        ) : pdfAvailable === true ? (
           <div className="pdf-frame">
             <iframe
               src={`${API_URL}/papers/${paperId}/pdf`}
               title={`${paper.title} (PDF)`}
             />
           </div>
-        )
+        ) : null
       ) : null}
     </>
   );

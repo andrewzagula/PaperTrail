@@ -203,10 +203,11 @@ def _compare_graph_ensure_breakdowns(state: CompareGraphState) -> CompareGraphSt
 
 
 def _compare_graph_normalize_profiles(state: CompareGraphState) -> CompareGraphState:
+    previous_profiles = state.get("normalized_profiles") or []
     selected_papers = []
     normalized_profiles = []
 
-    for paper_context in state["paper_contexts"]:
+    for index, paper_context in enumerate(state["paper_contexts"]):
         paper = paper_context["paper"]
         selected_papers.append({
             "id": str(paper.id),
@@ -215,6 +216,11 @@ def _compare_graph_normalize_profiles(state: CompareGraphState) -> CompareGraphS
             "arxiv_url": paper.arxiv_url,
             "created_at": paper.created_at.isoformat() if paper.created_at else "",
         })
+        # On the widen loop-back, a paper that was not widened keeps its
+        # existing profile rather than spending another model call on it.
+        if index < len(previous_profiles) and not paper_context.get("widened"):
+            normalized_profiles.append(previous_profiles[index])
+            continue
         normalized_profiles.append(
             normalize_paper_for_compare(
                 paper=paper,

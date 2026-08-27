@@ -294,6 +294,10 @@ async def ingest_discovery_result(
         )
 
     sections_data = split_into_sections(raw_text)
+    if not sections_data:
+        raise HTTPException(
+            status_code=422, detail=PDF_TEXT_EXTRACTION_DETAIL
+        )
 
     paper = Paper(
         user_id=user.id,

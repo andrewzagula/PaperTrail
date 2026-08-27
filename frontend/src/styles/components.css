@@ -872,12 +872,14 @@ button.code-head { cursor: pointer; }
   letter-spacing: var(--tracking-snug);
   margin-bottom: var(--space-md);
 }
-/* Section text now arrives reflowed into paragraphs, so the browser wraps it
-   to the reader's measure. pre-wrap would reimpose the PDF's column width. */
+/* Section text arrives reflowed with no newlines inside a paragraph, so
+   pre-wrap is inert there; breakdown fields still carry newline-formatted
+   bullet lists that depend on it. */
 .bd-sec p {
   font-size: var(--reading-size);
   line-height: var(--leading-body);
   max-width: 68ch;
+  white-space: pre-wrap;
 }
 .bd-sec p + p { margin-top: var(--space-lg); }
 .bd-sec ul {
